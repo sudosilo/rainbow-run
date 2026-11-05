@@ -45,7 +45,7 @@ button.on{background:var(--ink);color:#fff}
 .spot{display:flex;align-items:center;gap:8px}
 .spot b{font-size:18px;min-width:76px;text-align:center}
 .note{font-size:13px;color:var(--soft);margin:2px 0 0;line-height:1.35}
-#authRow[hidden]{display:none}
+#authRow[hidden],#rowSize[hidden]{display:none}
 </style>
 </head>
 <body>
@@ -55,7 +55,7 @@ button.on{background:var(--ink);color:#fff}
 
 <div id="panel">
   <h1>Rainbow Run</h1>
-  <p class="sub">Line up phones in spot order. The crow, the traffic or the rain moves off one screen and onto the next.</p>
+  <p class="sub">Line up phones in spot order, a row or a grid. Spots count left to right, then down. The picture runs from one screen onto the next.</p>
 
   <div class="row">
     <input id="room" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="room code" aria-label="Room code">
@@ -73,22 +73,36 @@ button.on{background:var(--ink);color:#fff}
     <span class="status" id="authMsg" data-s="off" hidden></span>
   </div>
 
-  <div class="row spot">
-    <button id="left" aria-label="Move one spot left">&#9664;</button>
-    <b id="spotOut">Spot 1</b>
-    <button id="right" aria-label="Move one spot right">&#9654;</button>
+  <div class="row" id="layouts">
+    <button data-layout="row" class="on">Row</button>
+    <button data-layout="quad">Quad</button>
+    <button data-layout="nine">Nine</button>
   </div>
   <div class="row spot">
+    <button id="left" aria-label="Move one spot back">&#9664;</button>
+    <b id="spotOut">Spot 1</b>
+    <button id="right" aria-label="Move one spot on">&#9654;</button>
+    <button id="auto" class="on">Auto</button>
+  </div>
+  <div class="row spot" id="rowSize">
     <button id="fewer" aria-label="One phone fewer in the row">&#8722;</button>
     <b id="rowOut">Row of 1</b>
     <button id="more" aria-label="One phone more in the row">+</button>
-    <button id="auto" class="on">Auto</button>
+  </div>
+  <div class="row spot">
+    <b id="fitOut">Fit 100%</b>
+    <button id="zoomOut" aria-label="Zoom out">&#8722;</button>
+    <button id="zoomIn" aria-label="Zoom in">+</button>
+    <button id="up" aria-label="Move the picture up">&#9650;</button>
+    <button id="down" aria-label="Move the picture down">&#9660;</button>
+    <button id="fitReset">Reset</button>
   </div>
 
   <div class="row" id="scenes">
     <button data-scene="crow" class="on">Crow</button>
     <button data-scene="highway">Highway</button>
     <button data-scene="rain">Rain</button>
+    <button data-scene="stars">Stars</button>
   </div>
 
   <div class="row">
@@ -118,14 +132,21 @@ function keep(k,v){try{if(v===undefined)return localStorage.getItem(k);if(v===nu
 
 /* ---------- room and spot ---------- */
 let seat=0,count=1,loopState=null;
-const SCENES=["crow","highway","rain"];
+const SCENES=["crow","highway","rain","stars"];
+const LAYOUTS={row:null,quad:[2,2],nine:[3,3]};
+let layout=LAYOUTS.hasOwnProperty(keep(APP+"-layout"))?keep(APP+"-layout"):"row";
+/* Fit belongs to this phone only: a small zoom and an up or down nudge, so screens with different shapes line up. */
+let zoom=parseFloat(keep(APP+"-zoom"))||1,nudge=parseFloat(keep(APP+"-nudge"))||0;
 let scene=SCENES.indexOf(keep(APP+"-scene"))>=0?keep(APP+"-scene"):"crow";
 let manualSpot=parseInt(keep(APP+"-spot"),10)||0;
 let manualRow=parseInt(keep(APP+"-row"),10)||0;
 function live(){return sync.status==="live"}
 /* Row size comes from the server while live. A row size set by hand wins, so phones still line up when the room drops. */
 function total(){return Math.max(1,manualRow||count)}
-function spot(){const n=total();return Math.min(n,Math.max(1,manualSpot||seat+1))}
+/* Columns and rows of the whole wall of phones. */
+function grid(){return layout==="row"?[total(),1]:LAYOUTS[layout]}
+function slots(){const q=grid();return q[0]*q[1]}
+function spot(){return Math.min(slots(),Math.max(1,manualSpot||seat+1))}
 
 /* ---------- clock, login, socket ---------- */
 const clockStat=document.getElementById("clockStat"),statusEl=document.getElementById("syncStatus");
@@ -142,10 +163,10 @@ const sync=createBoardSync({
   app:APP,schema:SCHEMA,url:SYNC_URL,
   ready:()=>!auth.on||!!auth.token,
   onOpen:()=>{if(auth.on)sync.send("auth",{token:auth.token})},
-  /* The scene is the one board value, so every phone in the room shows the same scene. */
-  exportState:()=>({scene:scene}),
-  loadState:st=>{if(st&&SCENES.indexOf(st.scene)>=0)setScene(st.scene,false);return true},
-  applyChange:(path,value)=>{if(path==="scene"&&SCENES.indexOf(value)>=0)setScene(value,false)},
+  /* The scene and the layout are the board values, so every phone in the room matches. */
+  exportState:()=>({scene:scene,layout:layout}),
+  loadState:st=>{if(st&&SCENES.indexOf(st.scene)>=0)setScene(st.scene,false);if(st&&LAYOUTS.hasOwnProperty(st.layout))setLayout(st.layout,false);return true},
+  applyChange:(path,value)=>{if(path==="scene"&&SCENES.indexOf(value)>=0)setScene(value,false);if(path==="layout"&&LAYOUTS.hasOwnProperty(value))setLayout(value,false)},
   onStatus:s=>{
     statusEl.dataset.s=s;
     statusEl.textContent=s==="off"?"sync off":s==="no room"?"not in a room":s;
@@ -243,33 +264,42 @@ function size(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerH
 addEventListener("resize",size);size();
 
 function hash(n){const x=Math.sin(n*127.1)*43758.5453;return x-Math.floor(x)}
+/* VIEW describes this phone's window onto the wall. Drawing happens in wall pixels for y, with this
+   phone's row already shifted into place, and in this phone's own pixels for x. XM is the extra
+   margin drawn past each side edge so a zoomed out phone has no blank border. */
+let VIEW={cols:1,rows:1,cx:0,cy:0,WH:0,XM:0};
+function wallRect(){return [-VIEW.XM,VIEW.cy*H-H*0.35,W+2*VIEW.XM,H*1.7]}
+function fillWall(col){const r=wallRect();g.fillStyle=col;g.fillRect(r[0],r[1],r[2],r[3])}
 /* Height of the crow, as a share of the screen, at a given beat count. */
-function flightY(b){return 0.46+0.13*Math.sin(b*Math.PI/4)+0.04*Math.sin(b*Math.PI*0.75)}
+function flightY(b){
+  if(VIEW.rows>1)return 0.5+0.36*Math.sin(b*Math.PI/4)+0.05*Math.sin(b*Math.PI*0.75);
+  return 0.46+0.13*Math.sin(b*Math.PI/4)+0.04*Math.sin(b*Math.PI*0.75);
+}
 
 function drawSky(left,u,secs){
-  const grd=g.createLinearGradient(0,0,0,H);
+  const WH=VIEW.WH,grd=g.createLinearGradient(0,0,0,WH);
   grd.addColorStop(0,"#bfe3f7");grd.addColorStop(0.62,"#e6f4fb");grd.addColorStop(1,"#fbeedb");
-  g.fillStyle=grd;g.fillRect(0,0,W,H);
-  const n=total();
+  fillWall(grd);
+  const n=VIEW.cols;
   /* clouds drift in world space, so they slide from one phone to the next */
   const span=n+2;
-  for(let i=0;i<Math.max(3,n*2);i++){
+  for(let i=0;i<Math.max(3,n*2)*VIEW.rows;i++){
     let wx=(hash(i+1)*span-secs*0.03*(0.6+hash(i+9)*0.6))%span;if(wx<0)wx+=span;wx-=1;
-    const x=(wx-left)*W,y=H*(0.08+hash(i+5)*0.32),c=Math.max(3,Math.round(u*1.2));
-    if(x<-30*c||x>W+30*c)continue;
+    const x=(wx-left)*W,y=WH*(0.06+hash(i+5)*(VIEW.rows>1?0.6:0.32)),c=Math.max(3,Math.round(u*1.2));
+    if(x<-30*c-VIEW.XM||x>W+30*c+VIEW.XM)continue;
     g.fillStyle="#ffffff";
     const blocks=[[0,2,16,3],[3,1,10,1],[5,0,5,1],[2,5,12,1]];
     blocks.forEach(([bx,by,bw,bh])=>g.fillRect(Math.round(x+bx*c),Math.round(y+by*c),bw*c,bh*c));
   }
   /* mesas sit on the ground in world space too */
-  const ground=H*0.86,step=Math.max(4,Math.round(u*1.5));
+  const ground=WH-H*0.14,step=Math.max(4,Math.round(u*1.5));
   g.fillStyle="#e7b98f";
-  for(let px=0;px<W+step;px+=step){
+  for(let px=-Math.ceil(VIEW.XM/step)*step;px<W+VIEW.XM+step;px+=step){
     const wx=left+px/W,k=Math.floor(wx*6);
     const h=hash(k*3.1)>0.55?H*(0.05+hash(k)*0.09):H*0.015;
     g.fillRect(px,Math.round(ground-h),step,Math.ceil(h)+1);
   }
-  g.fillStyle="#d9a27a";g.fillRect(0,Math.round(ground),W,H-ground);
+  g.fillStyle="#d9a27a";g.fillRect(-VIEW.XM,Math.round(ground),W+2*VIEW.XM,H);
 }
 
 function drawTrail(left,headX,b,u){
@@ -277,13 +307,13 @@ function drawTrail(left,headX,b,u){
   const band=Math.max(2,Math.round(u*1.1)),stripe=band*6,seg=Math.max(4,Math.round(u*2));
   const tail=headX-2.2;
   const nose=headX-(CW*Math.max(2,Math.round(u))*0.55)/W;
-  const x0=Math.max(tail,left),x1=Math.min(nose,left+1);
+  const m=VIEW.XM/W,x0=Math.max(tail,left-m),x1=Math.min(nose,left+1+m);
   if(x1<=x0)return;
   for(let px=Math.floor((x0-left)*W/seg)*seg;px<=(x1-left)*W;px+=seg){
     const wx=left+px/W;if(wx<tail||wx>nose)continue;
     const back=headX-wx,bt=b-back*4;
     const wob=(Math.floor((wx*W)/seg)%2)?band*0.5:-band*0.5;
-    const top=Math.round(H*flightY(bt)-stripe/2+wob);
+    const top=Math.round(VIEW.WH*flightY(bt)-stripe/2+wob);
     const fade=Math.min(1,(wx-tail)/0.35);
     g.globalAlpha=fade;
     for(let i=0;i<6;i++){g.fillStyle=RAINBOW[i];g.fillRect(px,top+i*band,seg,band)}
@@ -293,8 +323,8 @@ function drawTrail(left,headX,b,u){
 
 function drawCrow(left,headX,b,u){
   const c=Math.max(2,Math.round(u)),frame=FRAMES[Math.floor(b*4)%4];
-  const x=Math.round((headX-left)*W-CW*c*0.82),y=Math.round(H*flightY(b)-CH*c*0.5);
-  if(x>W||x+CW*c<0)return;
+  const x=Math.round((headX-left)*W-CW*c*0.82),y=Math.round(VIEW.WH*flightY(b)-CH*c*0.5);
+  if(x>W+VIEW.XM||x+CW*c<-VIEW.XM)return;
   for(let r=0;r<CH;r++){const row=frame[r];for(let q=0;q<CW;q++){const ch=row[q];if(ch==="."||!ch)continue;g.fillStyle=SPRITE_COLORS[ch];g.fillRect(x+q*c,y+r*c,c,c)}}
   /* a blue sheen along the back */
   g.fillStyle=SPRITE_COLORS.s;g.fillRect(x+8*c,y+7*c,6*c,c);
@@ -331,30 +361,31 @@ function drawVehicle(nose,cy,dir,len,wid,col,truck){
   }
   g.fillStyle="#fff3b0";const hx=dir>0?x+len-3:x+1;g.fillRect(hx,y+wid*0.1,2,wid*0.2);g.fillRect(hx,y+wid*0.7,2,wid*0.2);
 }
-function drawHighway(left,b){
-  const n=total();
-  g.fillStyle="#e9d3b1";g.fillRect(0,0,W,H);
+function drawHighway(left,b,row){
+  const n=VIEW.cols,XM=VIEW.XM;
+  g.fillStyle="#e9d3b1";g.fillRect(-XM,-H*0.35,W+2*XM,H*1.7);
   g.fillStyle="#d8bb93";
   for(let i=0;i<40;i++){const wx=Math.floor(left*20)/20+hash(i+Math.floor(left)*99)*1.2-0.1,x=(wx-left)*W;g.fillRect(x,H*(hash(i*7)<0.5?0.06+hash(i*3)*0.12:0.84+hash(i*5)*0.1),6,6)}
   const top=H*0.24,bot=H*0.80;
-  g.fillStyle="#5f6573";g.fillRect(0,top,W,bot-top);
-  g.fillStyle="#f5cf2c";g.fillRect(0,H*0.515,W,Math.max(2,H*0.006));g.fillRect(0,H*0.525,W,Math.max(2,H*0.006));
-  g.fillStyle="#ffffff";g.fillRect(0,top+2,W,Math.max(2,H*0.006));g.fillRect(0,bot-2-Math.max(2,H*0.006),W,Math.max(2,H*0.006));
+  const lw=Math.max(2,H*0.006),X0=-XM,WW=W+2*XM;
+  g.fillStyle="#5f6573";g.fillRect(X0,top,WW,bot-top);
+  g.fillStyle="#f5cf2c";g.fillRect(X0,H*0.515,WW,lw);g.fillRect(X0,H*0.525,WW,lw);
+  g.fillStyle="#ffffff";g.fillRect(X0,top+2,WW,lw);g.fillRect(X0,bot-2-lw,WW,lw);
   /* lane dashes sit in world space, so they line up from phone to phone */
   const dash=0.06,gap=0.06;
   [0.34,0.42,0.62,0.70].forEach(ly=>{
-    let wx=Math.floor(left/(dash+gap))*(dash+gap);
-    for(;wx<left+1;wx+=dash+gap){g.fillRect((wx-left)*W,H*ly-1,dash*W,Math.max(2,H*0.006))}
+    let wx=Math.floor((left-XM/W)/(dash+gap))*(dash+gap);
+    for(;wx<left+1+XM/W;wx+=dash+gap){g.fillRect((wx-left)*W,H*ly-1,dash*W,Math.max(2,H*0.006))}
   });
   const len=H*0.075,wid=H*0.05,span=n+2;
   LANES.forEach((ln,li)=>{
     const k=Math.max(3,Math.round(span*3.2)),spacing=span/k;
     for(let j=0;j<k;j++){
-      const seed=li*101+j;
+      const seed=li*101+j+row*5003;
       const base=(j+hash(seed)*0.35)*spacing;
       let wx=(base+ln.dir*ln.v*b)%span;if(wx<0)wx+=span;wx-=1;
       const truck=hash(seed+7)<0.16,L=truck?len*2.1:len;
-      const px=(wx-left)*W;if(px<-L*1.2||px>W+L*1.2)continue;
+      const px=(wx-left)*W;if(px<-L*1.2-XM||px>W+L*1.2+XM)continue;
       drawVehicle(px,H*ln.y,ln.dir,L,wid,CAR_COLORS[Math.floor(hash(seed+3)*CAR_COLORS.length)],truck);
     }
   });
@@ -366,30 +397,30 @@ function drawHighway(left,b){
 const MW={land:"#eef3f5",ink:"#123a4a",muted:"#4f6f7c",hill:"#9fb08a",
   drops:["#1e9e3e","#c49a00","#e07800","#d93636","#8c8c8c","#123a4a","#2f6fd6"]};
 function drawRain(left,b){
-  const n=total(),T=Math.max(0.85,Math.min(1.6,H/300)),HZ=H*0.62;
-  g.fillStyle=MW.land;g.fillRect(0,0,W,H);
+  const n=VIEW.cols,T=Math.max(0.85,Math.min(1.6,H/300)),WH=VIEW.WH,HZ=WH-H*0.38,XM=VIEW.XM;
+  fillWall(MW.land);
   g.lineWidth=1.1;g.lineJoin="round";g.lineCap="round";
   /* far hills, one line, drawn from world position so the ridge runs on across phones */
   g.strokeStyle=MW.hill;g.beginPath();
-  for(let px=0;px<=W+10;px+=10){const wx=left+px/W,y=HZ-T*(12+8*Math.sin(wx*9+1)+5*Math.sin(wx*21));px?g.lineTo(px,y):g.moveTo(px,y)}
+  for(let px=-Math.ceil(XM/10)*10;px<=W+XM+10;px+=10){const wx=left+px/W,y=HZ-T*(12+8*Math.sin(wx*9+1)+5*Math.sin(wx*21));px?g.lineTo(px,y):g.moveTo(px,y)}
   g.stroke();
-  g.strokeStyle=MW.muted;g.beginPath();g.moveTo(0,HZ);g.lineTo(W,HZ);g.stroke();
+  g.strokeStyle=MW.muted;g.beginPath();g.moveTo(-XM,HZ);g.lineTo(W+XM,HZ);g.stroke();
   /* water lines below the horizon */
   g.strokeStyle="rgba(79,111,124,0.22)";g.lineWidth=1;
   for(let i=1;i<12;i++){
-    const y=HZ+(H-HZ)*Math.pow(i/12,1.6);g.beginPath();
-    for(let px=0;px<=W+12;px+=12){const wx=left+px/W,yy=y+Math.sin(wx*40+b*0.9+i)*1.2*T*(1+i*0.1);px?g.lineTo(px,yy):g.moveTo(px,yy)}
+    const y=HZ+(WH-HZ)*Math.pow(i/12,1.6);g.beginPath();
+    for(let px=-Math.ceil(XM/12)*12;px<=W+XM+12;px+=12){const wx=left+px/W,yy=y+Math.sin(wx*40+b*0.9+i)*1.2*T*(1+i*0.1);px?g.lineTo(px,yy):g.moveTo(px,yy)}
     g.stroke();
   }
   /* mist streaks far off */
   g.strokeStyle="rgba(120,140,155,0.35)";
-  for(let i=0;i<Math.round((n+1)*22);i++){
+  for(let i=0;i<Math.round((n+1)*22*VIEW.rows);i++){
     const per=0.9+hash(i+300)*0.6,q=((b/per+hash(i+301))%1+1)%1,wx=-0.5+hash(i+302)*(n+1)+q*0.06;
-    const px=(wx-left)*W;if(px<-20||px>W+20)continue;
+    const px=(wx-left)*W;if(px<-20-XM||px>W+20+XM)continue;
     const l=(6+hash(i+303)*10)*T,y=q*HZ;g.beginPath();g.moveTo(px,y);g.lineTo(px+l*0.25,y+l);g.stroke();
   }
   g.lineWidth=1.1;
-  const span=n+1.6,k=Math.round(span*16),WIND=0.22,FALL=0.58;
+  const span=n+1.6,k=Math.round(span*16*VIEW.rows),WIND=0.22,FALL=0.58;
   for(let i=0;i<k;i++){
     const P=2.2+hash(i*3+1)*1.8,off=hash(i*3+2)*P,u=b+off,c=Math.floor(u/P),q=u-c*P,F=P*FALL;
     /* the drop from this cycle, falling */
@@ -401,12 +432,12 @@ function drawRain(left,b){
 }
 function dropAt(i,c,span,HZ){
   const sd=i*977+c*131,depth=hash(sd+1);
-  return {x0:-0.8+hash(sd)*span,depth,land:HZ+(H-HZ)*(0.08+0.88*depth),s:0.6+0.5*depth,
+  return {x0:-0.8+hash(sd)*span,depth,land:HZ+(VIEW.WH-HZ)*(0.08+0.88*depth),s:0.6+0.5*depth,
     sz:0.7+hash(sd+2)*0.8,col:MW.drops[Math.floor(hash(sd+3)*MW.drops.length)]};
 }
 function drawDrop(i,c,p,left,span,wind,HZ,T){
   const d=dropAt(i,c,span,HZ),wx=d.x0+wind*p,px=(wx-left)*W;
-  if(px<-30||px>W+30)return;
+  if(px<-30-VIEW.XM||px>W+30+VIEW.XM)return;
   const top=-0.08*H,y=top+(d.land-top)*Math.pow(p,1.35),r=4.2*T*d.sz*d.s;
   /* tilt the drop along the wind */
   g.save();g.translate(px,y);g.rotate(-0.12);g.strokeStyle=d.col;g.beginPath();
@@ -415,7 +446,7 @@ function drawDrop(i,c,p,left,span,wind,HZ,T){
 }
 function drawRipple(i,c,k,left,span,wind,HZ,T){
   const d=dropAt(i,c,span,HZ),wx=d.x0+wind,px=(wx-left)*W,max=(18+16*d.sz)*T*d.s;
-  if(px<-max-10||px>W+max+10)return;
+  if(px<-max-10-VIEW.XM||px>W+max+10+VIEW.XM)return;
   g.strokeStyle=d.col;
   for(let j=0;j<3;j++){const kk=k-j*0.18;if(kk<=0)continue;const R=max*kk;
     g.globalAlpha=(1-kk)*0.9;g.lineWidth=Math.max(0.8,2.2*T*d.s*(1-kk));
@@ -425,18 +456,55 @@ function drawRipple(i,c,k,left,span,wind,HZ,T){
   g.globalAlpha=1;g.lineWidth=1.1;
 }
 
+/* ---------- stars, the mohave.wtf starfield spread over the whole wall ---------- */
+/* One vanishing point sits in the middle of the wall, so stars fly out from the center phone and on
+   across the others. It is drawn on a light ground, with darker cousins of the site colors. */
+const STAR_COLORS=["#0097a7","#c2185b","#c49a00","#1e9e3e","#e07800","#2f6fd6"];
+const STAR_SPRITES={
+  tree:[[0,2,"#8b5a2b"],[0,1,"#1e9e3e"],[-1,0,"#1e9e3e"],[0,0,"#1e9e3e"],[1,0,"#1e9e3e"]],
+  house:[[-1,1,"#cc4444"],[0,1,"#cc4444"],[1,1,"#cc4444"],[-1,0,"#9aa3b2"],[0,0,"#9aa3b2"],[1,0,"#9aa3b2"],[0,-1,"#8b5a2b"]],
+  bird:[[-1,0,"#333333"],[0,-1,"#333333"],[1,0,"#333333"]]};
+const SPRITE_NAMES=Object.keys(STAR_SPRITES);
+function drawStars(left,b){
+  fillWall("#f4f7fa");
+  const WW=VIEW.cols*W,WH=VIEW.WH,cx=WW/2,cy=WH/2,XM=VIEW.XM,yTop=VIEW.cy*H-H*0.35,yBot=VIEW.cy*H+H*1.35;
+  const k=Math.round(140*Math.sqrt(VIEW.cols*VIEW.rows)*1.4),zs=72*b,px1=Math.max(1,H/700);
+  for(let i=0;i<k;i++){
+    const u=zs+hash(i*5+1)*1000,c=Math.floor(u/1000),z=1000-(u-c*1000);
+    if(z<4)continue;
+    const sd=i*7919+c*1049,x=(hash(sd)-0.5)*2,y=(hash(sd+1)-0.5)*2;
+    const sc=200/z,sx=cx+x*sc*cx-left*W,sy=cy+y*sc*cy;
+    if(sx<-XM||sx>W+XM||sy<yTop||sy>yBot)continue;
+    const size=Math.max(0.5,(1000-z)/150)*px1,col=hash(sd+2)<0.2?"#123a4a":STAR_COLORS[Math.floor(hash(sd+3)*STAR_COLORS.length)];
+    /* a short streak back toward the center stands in for the fading trail on the site */
+    const sc2=200/Math.min(1000,z+40),tx=cx+x*sc2*cx-left*W,ty=cy+y*sc2*cy;
+    g.globalAlpha=0.45;g.strokeStyle=col;g.lineWidth=Math.max(0.6,size*0.5);g.beginPath();g.moveTo(tx,ty);g.lineTo(sx,sy);g.stroke();g.globalAlpha=1;
+    const shape=hash(sd+4)<0.07?SPRITE_NAMES[Math.floor(hash(sd+5)*SPRITE_NAMES.length)]:null;
+    if(shape&&size>6*px1){const p=size/3;STAR_SPRITES[shape].forEach(q=>{g.fillStyle=q[2];g.fillRect(sx+q[0]*p,sy-q[1]*p,p,p)})}
+    else{g.fillStyle=col;g.fillRect(sx,sy,size,size)}
+  }
+}
+
 function frame(){
   const t=nowMs(),b=beatAt(t),secs=t/1000;
-  const n=total(),left=spot()-1,u=H/56;
-  if(scene==="highway"){drawHighway(left,b)}
+  const q=grid(),cols=q[0],rows=q[1],s=spot()-1,cx=s%cols,cy=Math.floor(s/cols),u=H/56;
+  VIEW={cols,rows,cx,cy,WH:rows*H,XM:W*(0.04+Math.max(0,(1/zoom-1)/2))};
+  g.setTransform(DPR,0,0,DPR,0,0);
+  g.fillStyle="#eef3f5";g.fillRect(0,0,W,H);
+  /* zoom around the middle of the screen, nudge up or down, then shift this phone's row into place */
+  g.translate(W/2,H/2+nudge*H);g.scale(zoom,zoom);g.translate(-W/2,-H/2-cy*H);
+  const left=cx;
+  if(scene==="highway"){g.save();g.translate(0,cy*H);drawHighway(left,b,cy);g.restore()}
   else if(scene==="rain"){drawRain(left,b)}
+  else if(scene==="stars"){drawStars(left,b)}
   else{
-    const runway=n+1.9;
+    const runway=cols+1.9;
     let bars=b/4;let headX=bars%runway;if(headX<0)headX+=runway;headX-=0.6;
     drawSky(left,u,secs);
     drawTrail(left,headX,b,u);
     drawCrow(left,headX,b,u);
   }
+  g.setTransform(DPR,0,0,DPR,0,0);
   drawSpotNumber();
   requestAnimationFrame(frame);
 }
@@ -501,9 +569,27 @@ function setScene(v,send){
   if(send)sync.change("scene",v);
 }
 document.querySelectorAll("#scenes button").forEach(bt=>bt.addEventListener("click",()=>setScene(bt.dataset.scene,true)));
+function setLayout(v,send){
+  layout=v;keep(APP+"-layout",v);
+  document.querySelectorAll("#layouts button").forEach(bt=>bt.classList.toggle("on",bt.dataset.layout===v));
+  renderSpot();
+  if(send)sync.change("layout",v);
+}
+document.querySelectorAll("#layouts button").forEach(bt=>bt.addEventListener("click",()=>setLayout(bt.dataset.layout,true)));
+function setFit(z,n){
+  zoom=Math.round(Math.min(1.25,Math.max(0.8,z))*100)/100;nudge=Math.round(Math.min(0.2,Math.max(-0.2,n))*1000)/1000;
+  keep(APP+"-zoom",String(zoom));keep(APP+"-nudge",String(nudge));renderSpot();
+}
+document.getElementById("zoomOut").addEventListener("click",()=>setFit(zoom-0.02,nudge));
+document.getElementById("zoomIn").addEventListener("click",()=>setFit(zoom+0.02,nudge));
+document.getElementById("up").addEventListener("click",()=>setFit(zoom,nudge-0.01));
+document.getElementById("down").addEventListener("click",()=>setFit(zoom,nudge+0.01));
+document.getElementById("fitReset").addEventListener("click",()=>setFit(1,0));
 function renderSpot(){
-  document.getElementById("spotOut").textContent="Spot "+spot();
+  document.getElementById("spotOut").textContent="Spot "+spot()+" of "+slots();
   document.getElementById("rowOut").textContent="Row of "+total();
+  document.getElementById("rowSize").hidden=layout!=="row";
+  document.getElementById("fitOut").textContent="Fit "+Math.round(zoom*100)+"%";
   document.getElementById("auto").classList.toggle("on",!manualSpot&&!manualRow);
 }
 function renderPace(){
@@ -511,7 +597,7 @@ function renderPace(){
 }
 function setSpot(v){manualSpot=v;keep(APP+"-spot",v?String(v):null);renderSpot()}
 document.getElementById("left").addEventListener("click",()=>setSpot(Math.max(1,spot()-1)));
-document.getElementById("right").addEventListener("click",()=>setSpot(Math.min(total(),spot()+1)));
+document.getElementById("right").addEventListener("click",()=>setSpot(Math.min(slots(),spot()+1)));
 function setRow(v){manualRow=v;keep(APP+"-row",v?String(v):null);renderSpot()}
 document.getElementById("fewer").addEventListener("click",()=>setRow(Math.max(1,total()-1)));
 document.getElementById("more").addEventListener("click",()=>setRow(Math.min(12,total()+1)));
@@ -544,7 +630,7 @@ document.getElementById("authIn").addEventListener("click",async()=>{
 /* a room in the address, like ?room=band1, joins on load */
 const fromUrl=new URLSearchParams(location.search).get("room");
 roomEl.value=sync.room||"";
-renderAuth();renderSpot();renderPace();setScene(scene,false);
+renderAuth();setLayout(layout,false);renderSpot();renderPace();setScene(scene,false);
 if(fromUrl){sync.setRoom(fromUrl);roomEl.value=sync.room}else sync.connect();
 </script>
 </body>
