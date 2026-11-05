@@ -24,7 +24,14 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:
   width:min(340px,calc(100% - 24px));max-height:calc(100% - 24px);overflow:auto;
   background:var(--card);border:2px solid var(--ink);border-radius:14px;padding:14px 14px 12px;
   box-shadow:4px 4px 0 var(--ink)}
+#panel{transition:opacity .6s ease}
+#panel.fading{opacity:0}
 #panel[hidden]{display:none}
+#menu{position:fixed;left:calc(12px + env(safe-area-inset-left,0px));top:calc(12px + env(safe-area-inset-top,0px));
+  width:48px;height:44px;padding:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px;
+  background:var(--card);border:2px solid var(--ink);border-radius:12px;box-shadow:3px 3px 0 var(--ink);transition:opacity .6s ease}
+#menu span{display:block;width:24px;height:3px;border-radius:2px;background:var(--ink)}
+#menu.gone{opacity:0;pointer-events:none}
 h1{margin:0 0 2px;font-size:22px;letter-spacing:.01em}
 .sub{margin:0 0 12px;color:var(--soft);font-size:14px;line-height:1.35}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 10px}
@@ -44,9 +51,11 @@ button.on{background:var(--ink);color:#fff}
 <body>
 <canvas id="sky" aria-label="A pixel crow flying with a rainbow trail across every phone in the room"></canvas>
 
+<button id="menu" class="gone" aria-label="Open the Rainbow Run panel"><span></span><span></span><span></span></button>
+
 <div id="panel">
   <h1>Rainbow Run</h1>
-  <p class="sub">Line up phones in spot order. The crow flies off one screen and onto the next.</p>
+  <p class="sub">Line up phones in spot order. The crow or the traffic moves off one screen and onto the next.</p>
 
   <div class="row">
     <input id="room" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="room code" aria-label="Room code">
@@ -76,12 +85,17 @@ button.on{background:var(--ink);color:#fff}
     <button id="auto" class="on">Auto</button>
   </div>
 
+  <div class="row" id="scenes">
+    <button data-scene="crow" class="on">Crow</button>
+    <button data-scene="highway">Highway</button>
+  </div>
+
   <div class="row">
     <button id="sound">Sound off</button>
     <button id="full">Full screen</button>
   </div>
   <p class="note" id="pace">Own pace, 100 bpm</p>
-  <p class="note">Tap the sky to hide or show this panel.</p>
+  <p class="note">This panel fades after a few seconds. Tap the menu button to bring it back.</p>
 </div>
 
 <script src="stompbox-lab-v3-config.js"></script>
@@ -103,6 +117,8 @@ function keep(k,v){try{if(v===undefined)return localStorage.getItem(k);if(v===nu
 
 /* ---------- room and spot ---------- */
 let seat=0,count=1,loopState=null;
+const SCENES=["crow","highway"];
+let scene=SCENES.indexOf(keep(APP+"-scene"))>=0?keep(APP+"-scene"):"crow";
 let manualSpot=parseInt(keep(APP+"-spot"),10)||0;
 let manualRow=parseInt(keep(APP+"-row"),10)||0;
 function live(){return sync.status==="live"}
@@ -125,7 +141,10 @@ const sync=createBoardSync({
   app:APP,schema:SCHEMA,url:SYNC_URL,
   ready:()=>!auth.on||!!auth.token,
   onOpen:()=>{if(auth.on)sync.send("auth",{token:auth.token})},
-  exportState:()=>null,loadState:()=>false,applyChange:()=>{},
+  /* The scene is the one board value, so every phone in the room shows the same scene. */
+  exportState:()=>({scene:scene}),
+  loadState:st=>{if(st&&SCENES.indexOf(st.scene)>=0)setScene(st.scene,false);return true},
+  applyChange:(path,value)=>{if(path==="scene"&&SCENES.indexOf(value)>=0)setScene(value,false)},
   onStatus:s=>{
     statusEl.dataset.s=s;
     statusEl.textContent=s==="off"?"sync off":s==="no room"?"not in a room":s;
@@ -287,14 +306,70 @@ function drawSpotNumber(){
   g.fillStyle="rgba(31,36,51,0.12)";g.fillText(String(s),W-H*0.05,H*0.98);
 }
 
+/* ---------- the highway, seen from above ---------- */
+const CAR_COLORS=["#e8403a","#3a84e0","#f5cf2c","#ffffff","#4cb84a","#f28c28","#7b52c9","#9aa3b2","#1d2130","#2aa7a1"];
+/* Six lanes, three each way. Speed is in screens per beat, so the band tempo speeds the traffic up. */
+const LANES=[{y:0.30,dir:-1,v:0.105},{y:0.38,dir:-1,v:0.085},{y:0.46,dir:-1,v:0.065},
+             {y:0.58,dir:1,v:0.07},{y:0.66,dir:1,v:0.09},{y:0.74,dir:1,v:0.11}];
+function roundRect(x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath();g.fill()}
+function drawVehicle(nose,cy,dir,len,wid,col,truck){
+  const x=dir>0?nose-len:nose,y=cy-wid/2,r=Math.max(2,wid*0.22);
+  g.fillStyle="rgba(31,36,51,0.18)";roundRect(x+2,y+3,len,wid,r);
+  if(truck){
+    const cab=len*0.24,gap=len*0.03,cx=dir>0?x+len-cab:x,tx=dir>0?x:x+cab+gap;
+    g.fillStyle="#f4f6f9";roundRect(tx,y,len-cab-gap,wid,r*0.5);
+    g.fillStyle="#c9d3e0";g.fillRect(tx+len*0.04,y+wid*0.15,len-cab-gap-len*0.08,wid*0.08);
+    g.fillStyle=col;roundRect(cx,y+wid*0.04,cab,wid*0.92,r);
+    g.fillStyle="#2b3448";g.fillRect(dir>0?cx+cab*0.5:cx+cab*0.2,y+wid*0.18,cab*0.3,wid*0.64);
+  }else{
+    g.fillStyle=col;roundRect(x,y,len,wid,r);
+    g.fillStyle="#2b3448";
+    const front=dir>0?x+len*0.58:x+len*0.2,rear=dir>0?x+len*0.12:x+len*0.72;
+    g.fillRect(front,y+wid*0.14,len*0.2,wid*0.72);g.fillRect(rear,y+wid*0.18,len*0.14,wid*0.64);
+    g.fillStyle="rgba(255,255,255,0.35)";g.fillRect(x+len*0.36,y+wid*0.2,len*0.2,wid*0.6);
+  }
+  g.fillStyle="#fff3b0";const hx=dir>0?x+len-3:x+1;g.fillRect(hx,y+wid*0.1,2,wid*0.2);g.fillRect(hx,y+wid*0.7,2,wid*0.2);
+}
+function drawHighway(left,b){
+  const n=total();
+  g.fillStyle="#e9d3b1";g.fillRect(0,0,W,H);
+  g.fillStyle="#d8bb93";
+  for(let i=0;i<40;i++){const wx=Math.floor(left*20)/20+hash(i+Math.floor(left)*99)*1.2-0.1,x=(wx-left)*W;g.fillRect(x,H*(hash(i*7)<0.5?0.06+hash(i*3)*0.12:0.84+hash(i*5)*0.1),6,6)}
+  const top=H*0.24,bot=H*0.80;
+  g.fillStyle="#5f6573";g.fillRect(0,top,W,bot-top);
+  g.fillStyle="#f5cf2c";g.fillRect(0,H*0.515,W,Math.max(2,H*0.006));g.fillRect(0,H*0.525,W,Math.max(2,H*0.006));
+  g.fillStyle="#ffffff";g.fillRect(0,top+2,W,Math.max(2,H*0.006));g.fillRect(0,bot-2-Math.max(2,H*0.006),W,Math.max(2,H*0.006));
+  /* lane dashes sit in world space, so they line up from phone to phone */
+  const dash=0.06,gap=0.06;
+  [0.34,0.42,0.62,0.70].forEach(ly=>{
+    let wx=Math.floor(left/(dash+gap))*(dash+gap);
+    for(;wx<left+1;wx+=dash+gap){g.fillRect((wx-left)*W,H*ly-1,dash*W,Math.max(2,H*0.006))}
+  });
+  const len=H*0.075,wid=H*0.05,span=n+2;
+  LANES.forEach((ln,li)=>{
+    const k=Math.max(3,Math.round(span*3.2)),spacing=span/k;
+    for(let j=0;j<k;j++){
+      const seed=li*101+j;
+      const base=(j+hash(seed)*0.35)*spacing;
+      let wx=(base+ln.dir*ln.v*b)%span;if(wx<0)wx+=span;wx-=1;
+      const truck=hash(seed+7)<0.16,L=truck?len*2.1:len;
+      const px=(wx-left)*W;if(px<-L*1.2||px>W+L*1.2)continue;
+      drawVehicle(px,H*ln.y,ln.dir,L,wid,CAR_COLORS[Math.floor(hash(seed+3)*CAR_COLORS.length)],truck);
+    }
+  });
+}
+
 function frame(){
   const t=nowMs(),b=beatAt(t),secs=t/1000;
   const n=total(),left=spot()-1,u=H/56;
-  const runway=n+1.9;
-  let bars=b/4;let headX=bars%runway;if(headX<0)headX+=runway;headX-=0.6;
-  drawSky(left,u,secs);
-  drawTrail(left,headX,b,u);
-  drawCrow(left,headX,b,u);
+  if(scene==="highway"){drawHighway(left,b)}
+  else{
+    const runway=n+1.9;
+    let bars=b/4;let headX=bars%runway;if(headX<0)headX+=runway;headX-=0.6;
+    drawSky(left,u,secs);
+    drawTrail(left,headX,b,u);
+    drawCrow(left,headX,b,u);
+  }
   drawSpotNumber();
   requestAnimationFrame(frame);
 }
@@ -337,7 +412,28 @@ soundBtn.addEventListener("click",()=>{
 
 /* ---------- panel ---------- */
 const panel=document.getElementById("panel"),roomEl=document.getElementById("room");
-cv.addEventListener("click",()=>{panel.hidden=!panel.hidden});
+/* The panel fades away after a few quiet seconds and leaves the menu button in the corner. */
+const menuBtn=document.getElementById("menu");
+let fadeTimer=null,hideTimer=null;
+function showPanel(){
+  clearTimeout(hideTimer);panel.hidden=false;panel.classList.remove("fading");menuBtn.classList.add("gone");
+  armFade();
+}
+function armFade(){clearTimeout(fadeTimer);fadeTimer=setTimeout(fadePanel,5000)}
+function fadePanel(){
+  if(panel.contains(document.activeElement)&&document.activeElement.tagName==="INPUT"){armFade();return}
+  panel.classList.add("fading");menuBtn.classList.remove("gone");
+  hideTimer=setTimeout(()=>{panel.hidden=true},600);
+}
+menuBtn.addEventListener("click",showPanel);
+["pointerdown","keydown","input"].forEach(ev=>panel.addEventListener(ev,()=>{if(!panel.hidden&&!panel.classList.contains("fading"))armFade()}));
+armFade();
+function setScene(v,send){
+  scene=v;keep(APP+"-scene",v);
+  document.querySelectorAll("#scenes button").forEach(bt=>bt.classList.toggle("on",bt.dataset.scene===v));
+  if(send)sync.change("scene",v);
+}
+document.querySelectorAll("#scenes button").forEach(bt=>bt.addEventListener("click",()=>setScene(bt.dataset.scene,true)));
 function renderSpot(){
   document.getElementById("spotOut").textContent="Spot "+spot();
   document.getElementById("rowOut").textContent="Row of "+total();
@@ -381,7 +477,7 @@ document.getElementById("authIn").addEventListener("click",async()=>{
 /* a room in the address, like ?room=band1, joins on load */
 const fromUrl=new URLSearchParams(location.search).get("room");
 roomEl.value=sync.room||"";
-renderAuth();renderSpot();renderPace();
+renderAuth();renderSpot();renderPace();setScene(scene,false);
 if(fromUrl){sync.setRoom(fromUrl);roomEl.value=sync.room}else sync.connect();
 </script>
 </body>
