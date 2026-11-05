@@ -55,7 +55,7 @@ button.on{background:var(--ink);color:#fff}
 
 <div id="panel">
   <h1>Rainbow Run</h1>
-  <p class="sub">Line up phones in spot order. The crow or the traffic moves off one screen and onto the next.</p>
+  <p class="sub">Line up phones in spot order. The crow, the traffic or the rain moves off one screen and onto the next.</p>
 
   <div class="row">
     <input id="room" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="room code" aria-label="Room code">
@@ -88,6 +88,7 @@ button.on{background:var(--ink);color:#fff}
   <div class="row" id="scenes">
     <button data-scene="crow" class="on">Crow</button>
     <button data-scene="highway">Highway</button>
+    <button data-scene="rain">Rain</button>
   </div>
 
   <div class="row">
@@ -117,7 +118,7 @@ function keep(k,v){try{if(v===undefined)return localStorage.getItem(k);if(v===nu
 
 /* ---------- room and spot ---------- */
 let seat=0,count=1,loopState=null;
-const SCENES=["crow","highway"];
+const SCENES=["crow","highway","rain"];
 let scene=SCENES.indexOf(keep(APP+"-scene"))>=0?keep(APP+"-scene"):"crow";
 let manualSpot=parseInt(keep(APP+"-spot"),10)||0;
 let manualRow=parseInt(keep(APP+"-row"),10)||0;
@@ -359,10 +360,76 @@ function drawHighway(left,b){
   });
 }
 
+/* ---------- rain, in the single line style of the mohave.wtf rain page ---------- */
+/* Every shape is a 1.1 pixel colored line on a pale flat ground, no fills. The wind carries each drop
+   sideways as it falls, so drops cross from one phone onto the next. */
+const MW={land:"#eef3f5",ink:"#123a4a",muted:"#4f6f7c",hill:"#9fb08a",
+  drops:["#1e9e3e","#c49a00","#e07800","#d93636","#8c8c8c","#123a4a","#2f6fd6"]};
+function drawRain(left,b){
+  const n=total(),T=Math.max(0.85,Math.min(1.6,H/300)),HZ=H*0.62;
+  g.fillStyle=MW.land;g.fillRect(0,0,W,H);
+  g.lineWidth=1.1;g.lineJoin="round";g.lineCap="round";
+  /* far hills, one line, drawn from world position so the ridge runs on across phones */
+  g.strokeStyle=MW.hill;g.beginPath();
+  for(let px=0;px<=W+10;px+=10){const wx=left+px/W,y=HZ-T*(12+8*Math.sin(wx*9+1)+5*Math.sin(wx*21));px?g.lineTo(px,y):g.moveTo(px,y)}
+  g.stroke();
+  g.strokeStyle=MW.muted;g.beginPath();g.moveTo(0,HZ);g.lineTo(W,HZ);g.stroke();
+  /* water lines below the horizon */
+  g.strokeStyle="rgba(79,111,124,0.22)";g.lineWidth=1;
+  for(let i=1;i<12;i++){
+    const y=HZ+(H-HZ)*Math.pow(i/12,1.6);g.beginPath();
+    for(let px=0;px<=W+12;px+=12){const wx=left+px/W,yy=y+Math.sin(wx*40+b*0.9+i)*1.2*T*(1+i*0.1);px?g.lineTo(px,yy):g.moveTo(px,yy)}
+    g.stroke();
+  }
+  /* mist streaks far off */
+  g.strokeStyle="rgba(120,140,155,0.35)";
+  for(let i=0;i<Math.round((n+1)*22);i++){
+    const per=0.9+hash(i+300)*0.6,q=((b/per+hash(i+301))%1+1)%1,wx=-0.5+hash(i+302)*(n+1)+q*0.06;
+    const px=(wx-left)*W;if(px<-20||px>W+20)continue;
+    const l=(6+hash(i+303)*10)*T,y=q*HZ;g.beginPath();g.moveTo(px,y);g.lineTo(px+l*0.25,y+l);g.stroke();
+  }
+  g.lineWidth=1.1;
+  const span=n+1.6,k=Math.round(span*16),WIND=0.22,FALL=0.58;
+  for(let i=0;i<k;i++){
+    const P=2.2+hash(i*3+1)*1.8,off=hash(i*3+2)*P,u=b+off,c=Math.floor(u/P),q=u-c*P,F=P*FALL;
+    /* the drop from this cycle, falling */
+    if(q<F)drawDrop(i,c,q/F,left,span,WIND,HZ,T);
+    /* the ripple from the cycle that already landed */
+    const ra=q>=F?q-F:q+P-F,rc=q>=F?c:c-1;
+    if(ra<1.6)drawRipple(i,rc,ra/1.6,left,span,WIND,HZ,T);
+  }
+}
+function dropAt(i,c,span,HZ){
+  const sd=i*977+c*131,depth=hash(sd+1);
+  return {x0:-0.8+hash(sd)*span,depth,land:HZ+(H-HZ)*(0.08+0.88*depth),s:0.6+0.5*depth,
+    sz:0.7+hash(sd+2)*0.8,col:MW.drops[Math.floor(hash(sd+3)*MW.drops.length)]};
+}
+function drawDrop(i,c,p,left,span,wind,HZ,T){
+  const d=dropAt(i,c,span,HZ),wx=d.x0+wind*p,px=(wx-left)*W;
+  if(px<-30||px>W+30)return;
+  const top=-0.08*H,y=top+(d.land-top)*Math.pow(p,1.35),r=4.2*T*d.sz*d.s;
+  /* tilt the drop along the wind */
+  g.save();g.translate(px,y);g.rotate(-0.12);g.strokeStyle=d.col;g.beginPath();
+  g.moveTo(0,-r*2.4);g.bezierCurveTo(r*0.9,-r*0.9,r,r*0.2,0,r);g.bezierCurveTo(-r,r*0.2,-r*0.9,-r*0.9,0,-r*2.4);g.stroke();
+  g.restore();
+}
+function drawRipple(i,c,k,left,span,wind,HZ,T){
+  const d=dropAt(i,c,span,HZ),wx=d.x0+wind,px=(wx-left)*W,max=(18+16*d.sz)*T*d.s;
+  if(px<-max-10||px>W+max+10)return;
+  g.strokeStyle=d.col;
+  for(let j=0;j<3;j++){const kk=k-j*0.18;if(kk<=0)continue;const R=max*kk;
+    g.globalAlpha=(1-kk)*0.9;g.lineWidth=Math.max(0.8,2.2*T*d.s*(1-kk));
+    g.beginPath();g.ellipse(px,d.land,R,R*0.32,0,0,6.283);g.stroke();}
+  if(k<0.16){g.globalAlpha=1-k/0.16;g.lineWidth=1.1;
+    for(let j=0;j<5;j++){const a=3.14+j*0.785,h=k*1.6*90*T*d.s*0.25;g.beginPath();g.arc(px+Math.cos(a)*h*0.6,d.land+Math.sin(a)*h-h*0.2,1.6*T*d.s,0,6.283);g.stroke()}}
+  g.globalAlpha=1;g.lineWidth=1.1;
+}
+
 function frame(){
   const t=nowMs(),b=beatAt(t),secs=t/1000;
   const n=total(),left=spot()-1,u=H/56;
   if(scene==="highway"){drawHighway(left,b)}
+  else if(scene==="rain"){drawRain(left,b)}
   else{
     const runway=n+1.9;
     let bars=b/4;let headX=bars%runway;if(headX<0)headX+=runway;headX-=0.6;
