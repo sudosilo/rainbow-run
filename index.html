@@ -55,7 +55,7 @@ button.on{background:var(--ink);color:#fff}
 
 <div id="panel">
   <h1>Rainbow Run</h1>
-  <p class="sub">Line up phones in spot order, a row or a grid. Spots count left to right, then down. The picture runs from one screen onto the next.</p>
+  <p class="sub">Line up phones in spot order, a row or a grid. Spots count left to right, then down. For rain, a row stacks top to bottom. The picture runs from one screen onto the next.</p>
 
   <div class="row">
     <input id="room" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="room code" aria-label="Room code">
@@ -144,7 +144,8 @@ function live(){return sync.status==="live"}
 /* Row size comes from the server while live. A row size set by hand wins, so phones still line up when the room drops. */
 function total(){return Math.max(1,manualRow||count)}
 /* Columns and rows of the whole wall of phones. */
-function grid(){return layout==="row"?[total(),1]:LAYOUTS[layout]}
+/* In a row, rain turns the row on its side: the phones stack top to bottom, spot 1 at the top. */
+function grid(){if(layout==="row")return scene==="rain"?[1,total()]:[total(),1];return LAYOUTS[layout]}
 function slots(){const q=grid();return q[0]*q[1]}
 function spot(){return Math.min(slots(),Math.max(1,manualSpot||seat+1))}
 
@@ -392,61 +393,131 @@ function drawHighway(left,b,row){
 }
 
 /* ---------- rain, in the single line style of the mohave.wtf rain page ---------- */
-/* Every shape is a 1.1 pixel colored line on a pale flat ground, no fills. The wind carries each drop
-   sideways as it falls, so drops cross from one phone onto the next. */
-const MW={land:"#eef3f5",ink:"#123a4a",muted:"#4f6f7c",hill:"#9fb08a",
+/* Every shape is a thin colored line on a pale flat ground. Shapes that sit in front of others are
+   filled with the ground color first, so lines behind them hide and the look stays pure line work.
+   In a row of phones the rain runs top to bottom: spot 1 is the top of the sky and the last spot is
+   the water. A grid of phones uses the whole wall. */
+const MW={land:"#eef3f5",ink:"#123a4a",muted:"#4f6f7c",hill:"#9fb08a",cloud:"#7d8f99",sun:"#e07800",
   drops:["#1e9e3e","#c49a00","#e07800","#d93636","#8c8c8c","#123a4a","#2f6fd6"]};
+/* Wind, the same on every phone. It swings both ways over about a minute. */
+function windAt(b){return 0.42*Math.sin(b*Math.PI*2/96)+0.14*Math.sin(b*Math.PI*2/37+1)}
+function windSum(b){return -0.42*96/(Math.PI*2)*Math.cos(b*Math.PI*2/96)-0.14*37/(Math.PI*2)*Math.cos(b*Math.PI*2/37+1)}
+function lineIn(col,w){g.strokeStyle=col;g.lineWidth=w||1.1;g.lineJoin="round";g.lineCap="round"}
+function solid(){g.fillStyle=MW.land;g.fill();g.stroke()}
 function drawRain(left,b){
-  const n=VIEW.cols,T=Math.max(0.85,Math.min(1.6,H/300)),WH=VIEW.WH,HZ=WH-H*0.38,XM=VIEW.XM;
+  const cols=VIEW.cols,rows=VIEW.rows,T=Math.max(0.85,Math.min(1.6,H/300)),WH=VIEW.WH,HZ=WH-H*0.38,XM=VIEW.XM;
+  const v0=VIEW.cy*H-H*0.35,v1=VIEW.cy*H+H*1.35,X=wx=>(wx-left)*W,seen=(px,py,m)=>px>-XM-m&&px<W+XM+m&&py>v0-m&&py<v1+m;
   fillWall(MW.land);
-  g.lineWidth=1.1;g.lineJoin="round";g.lineCap="round";
-  /* far hills, one line, drawn from world position so the ridge runs on across phones */
-  g.strokeStyle=MW.hill;g.beginPath();
-  for(let px=-Math.ceil(XM/10)*10;px<=W+XM+10;px+=10){const wx=left+px/W,y=HZ-T*(12+8*Math.sin(wx*9+1)+5*Math.sin(wx*21));px?g.lineTo(px,y):g.moveTo(px,y)}
-  g.stroke();
-  g.strokeStyle=MW.muted;g.beginPath();g.moveTo(-XM,HZ);g.lineTo(W+XM,HZ);g.stroke();
-  /* water lines below the horizon */
-  g.strokeStyle="rgba(79,111,124,0.22)";g.lineWidth=1;
-  for(let i=1;i<12;i++){
-    const y=HZ+(WH-HZ)*Math.pow(i/12,1.6);g.beginPath();
-    for(let px=-Math.ceil(XM/12)*12;px<=W+XM+12;px+=12){const wx=left+px/W,yy=y+Math.sin(wx*40+b*0.9+i)*1.2*T*(1+i*0.1);px?g.lineTo(px,yy):g.moveTo(px,yy)}
+  /* the sun, high on the right of the wall */
+  {const sx=X(cols*0.8),sy=H*0.13,r=H*0.055;
+   if(seen(sx,sy,r*3)){lineIn(MW.sun);g.beginPath();g.arc(sx,sy,r,0,6.283);g.stroke();
+     for(let i=0;i<10;i++){const a=i*0.628+b*0.02;g.beginPath();g.moveTo(sx+Math.cos(a)*r*1.35,sy+Math.sin(a)*r*1.35);g.lineTo(sx+Math.cos(a)*r*1.8,sy+Math.sin(a)*r*1.8);g.stroke()}}}
+  /* an airplane now and then along the very top, with a dashed contrail */
+  {const per=64,c=Math.floor(b/per),q=(b-c*per)/28;
+   if(q<1){const dir=c%2?-1:1,wx=dir>0?-0.3+q*(cols+0.6):cols+0.3-q*(cols+0.6),px=X(wx),py=H*0.055,sz=T*9;
+     if(seen(px,py,W)){lineIn(MW.muted);g.setLineDash([4,5]);g.beginPath();g.moveTo(px-dir*sz*1.6,py);g.lineTo(px-dir*W*0.7,py+1);g.stroke();g.setLineDash([]);
+       lineIn(MW.ink);g.save();g.translate(px,py);g.scale(dir,1);g.beginPath();
+       g.moveTo(-sz*1.5,-sz*0.15);g.lineTo(sz*1.2,-sz*0.15);g.quadraticCurveTo(sz*1.7,0,sz*1.2,sz*0.15);g.lineTo(-sz*1.5,sz*0.15);g.closePath();solid();
+       g.beginPath();g.moveTo(-sz*1.3,-sz*0.15);g.lineTo(-sz*1.6,-sz*0.65);g.lineTo(-sz*1.1,-sz*0.15);g.stroke();
+       g.beginPath();g.moveTo(sz*0.1,0);g.lineTo(-sz*0.5,sz*0.7);g.lineTo(-sz*0.15,sz*0.7);g.lineTo(sz*0.45,0);g.stroke();g.restore();}}}
+  /* a hot air balloon drifts through once in a while */
+  {const per=120,c=Math.floor(b/per),q=(b-c*per)/100;
+   if(q<1){const dir=c%2?1:-1,wx=dir>0?-0.3+q*(cols+0.6):cols+0.3-q*(cols+0.6),px=X(wx),py=Math.min(HZ-H*0.3,WH*0.32)+Math.sin(b*0.3)*H*0.02,r=T*14;
+     if(seen(px,py,r*3)){g.save();g.translate(px,py);lineIn("#d93636");
+       g.beginPath();g.arc(0,0,r,Math.PI*0.85,Math.PI*0.15);g.lineTo(r*0.35,r*1.35);g.lineTo(-r*0.35,r*1.35);g.closePath();solid();
+       lineIn("#c49a00");for(const k of [-0.45,0,0.45]){g.beginPath();g.moveTo(k*r*0.8,-r*0.98+Math.abs(k)*r*0.25);g.quadraticCurveTo(k*r*1.5,0,k*r*0.35,r*1.32);g.stroke()}
+       lineIn(MW.ink);g.beginPath();g.moveTo(-r*0.3,r*1.35);g.lineTo(-r*0.22,r*1.75);g.moveTo(r*0.3,r*1.35);g.lineTo(r*0.22,r*1.75);g.stroke();
+       g.beginPath();g.rect(-r*0.24,r*1.75,r*0.48,r*0.32);solid();g.restore();}}}
+  /* two flocks of distant birds, one each way */
+  for(const fl of [{per:40,len:22,y:0.42,dir:1,n:5},{per:56,len:30,y:0.62,dir:-1,n:4}]){
+    const c=Math.floor(b/fl.per),q=(b-c*fl.per)/fl.len;if(q>=1)continue;
+    const by=Math.min(HZ-H*0.12,fl.y*HZ);lineIn(MW.ink,1);
+    for(let i=0;i<fl.n;i++){
+      const wx=(fl.dir>0?-0.3+q*(cols+0.6):cols+0.3-q*(cols+0.6))-fl.dir*i*0.035,px=X(wx),py=by+(i%2?1:-1)*i*T*4+Math.sin(b*2+i)*T*2,s=T*(4+hash(i+c)*1.5),f=Math.sin(b*9+i*1.7);
+      if(!seen(px,py,20))continue;
+      g.beginPath();g.moveTo(px-s,py-s*0.3*f);g.quadraticCurveTo(px-s*0.5,py-s*0.6*f,px,py);g.quadraticCurveTo(px+s*0.5,py-s*0.6*f,px+s,py-s*0.3*f);g.stroke();
+    }
+  }
+  /* rain clouds along the top, carried by the wind */
+  {const span=cols+2.4,drift=0.02*windSum(b),n=Math.max(3,Math.round(span*(W>H?2.4:1.4)));
+   for(let i=0;i<n;i++){
+     let wx=(hash(i*11+1)*span+drift)%span;if(wx<0)wx+=span;wx-=1.2;
+     const sc=0.7+hash(i*11+2)*0.7,yb=H*(0.16+hash(i*11+3)*0.12),px=X(wx);
+     if(!seen(px,yb,H*0.4))continue;
+     lineIn(hash(i*11+4)<0.6?MW.cloud:MW.muted);
+     const bumps=4+Math.floor(hash(i*11+5)*3);let x=px;
+     g.beginPath();g.moveTo(px,yb);
+     for(let j=0;j<bumps;j++){const r=H*(0.022+0.03*hash(i*11+6+j))*sc*(j===0||j===bumps-1?0.7:1);g.arc(x+r,yb,r,Math.PI,0);x+=2*r}
+     g.closePath();solid();
+   }}
+  /* the far shore and the water, on the bottom of the wall */
+  if(v1>HZ-H*0.2){
+    lineIn(MW.hill);g.beginPath();
+    for(let px=-Math.ceil(XM/10)*10;px<=W+XM+10;px+=10){const wx=left+px/W,y=HZ-T*(12+8*Math.sin(wx*9+1)+5*Math.sin(wx*21));px>-Math.ceil(XM/10)*10?g.lineTo(px,y):g.moveTo(px,y)}
     g.stroke();
+    lineIn(MW.muted);g.beginPath();g.moveTo(-XM,HZ);g.lineTo(W+XM,HZ);g.stroke();
+    lineIn("rgba(79,111,124,0.22)",1);
+    for(let i=1;i<12;i++){
+      const y=HZ+(WH-HZ)*Math.pow(i/12,1.6);g.beginPath();
+      for(let px=-Math.ceil(XM/12)*12;px<=W+XM+12;px+=12){const wx=left+px/W,yy=y+Math.sin(wx*40+b*0.9+i)*1.2*T*(1+i*0.1);px>-Math.ceil(XM/12)*12?g.lineTo(px,yy):g.moveTo(px,yy)}
+      g.stroke();
+    }
+    /* a distant sailboat creeping along the horizon */
+    {const span=cols+0.8;let wx=(b*0.004)%span-0.4;const px=X(wx),py=HZ+(WH-HZ)*0.1,s=T*7;
+     if(seen(px,py,40)){g.save();g.translate(px,py);lineIn(MW.ink);
+       g.beginPath();g.moveTo(-s*1.3,0);g.lineTo(s*1.3,0);g.lineTo(s*0.9,s*0.45);g.lineTo(-s*0.9,s*0.45);g.closePath();solid();
+       g.beginPath();g.moveTo(0,0);g.lineTo(0,-s*2.6);g.stroke();
+       g.beginPath();g.moveTo(s*0.15,-s*2.5);g.lineTo(s*1.2,-s*0.25);g.lineTo(s*0.15,-s*0.25);g.closePath();solid();
+       g.beginPath();g.moveTo(-s*0.15,-s*2.1);g.lineTo(-s*0.9,-s*0.25);g.lineTo(-s*0.15,-s*0.25);g.closePath();solid();g.restore();}}
   }
-  /* mist streaks far off */
-  g.strokeStyle="rgba(120,140,155,0.35)";
-  for(let i=0;i<Math.round((n+1)*22*VIEW.rows);i++){
-    const per=0.9+hash(i+300)*0.6,q=((b/per+hash(i+301))%1+1)%1,wx=-0.5+hash(i+302)*(n+1)+q*0.06;
-    const px=(wx-left)*W;if(px<-20-XM||px>W+20+XM)continue;
-    const l=(6+hash(i+303)*10)*T,y=q*HZ;g.beginPath();g.moveTo(px,y);g.lineTo(px+l*0.25,y+l);g.stroke();
+  /* mist streaks in the sky lean with the wind */
+  const wNow=windAt(b);lineIn("rgba(120,140,155,0.35)",1);
+  for(let i=0;i<Math.round((cols+1)*22*rows);i++){
+    const per=0.9+hash(i+300)*0.6,q=((b/per+hash(i+301))%1+1)%1,wx=-0.5+hash(i+302)*(cols+1)+q*wNow*0.15;
+    const px=X(wx),y=H*0.2+q*(HZ-H*0.2);if(!seen(px,y,20))continue;
+    const l=(6+hash(i+303)*10)*T;g.beginPath();g.moveTo(px,y);g.lineTo(px+l*wNow*0.9,y+l);g.stroke();
   }
+  /* the drops, and the rings where they land */
   g.lineWidth=1.1;
-  const span=n+1.6,k=Math.round(span*16*VIEW.rows),WIND=0.22,FALL=0.58;
+  const span=cols+2.4,k=Math.round(span*16*rows),FALL=0.58,stretch=Math.sqrt(rows);
   for(let i=0;i<k;i++){
-    const P=2.2+hash(i*3+1)*1.8,off=hash(i*3+2)*P,u=b+off,c=Math.floor(u/P),q=u-c*P,F=P*FALL;
-    /* the drop from this cycle, falling */
-    if(q<F)drawDrop(i,c,q/F,left,span,WIND,HZ,T);
-    /* the ripple from the cycle that already landed */
+    const P=(2.2+hash(i*3+1)*1.8)*stretch,off=hash(i*3+2)*P,u=b+off,c=Math.floor(u/P),q=u-c*P,F=P*FALL;
+    if(q<F)drawDrop(i,c,q/F,left,span,HZ,T,P,off,seen);
     const ra=q>=F?q-F:q+P-F,rc=q>=F?c:c-1;
-    if(ra<1.6)drawRipple(i,rc,ra/1.6,left,span,WIND,HZ,T);
+    if(ra<1.6)drawRipple(i,rc,ra/1.6,left,span,HZ,T,P,off,seen);
   }
+  /* now and then a fish jumps near the front, in the middle of the wall */
+  {const per=24,c=Math.floor(b/per),q=(b-c*per)/1.6,base=WH-H*0.1,x0=cols/2+(hash(c*5+1)-0.5)*0.3,dir=hash(c*5+2)<0.5?-1:1,reach=0.12;
+   if(q<1){const wx=x0+dir*reach*q,px=X(wx),py=base-Math.sin(q*Math.PI)*H*0.17,s=T*8;
+     if(seen(px,py,40)){const ang=Math.atan2(-Math.cos(q*Math.PI)*H*0.17*Math.PI,dir*reach*W);
+       g.save();g.translate(px,py);g.rotate(ang);g.scale(dir,1);lineIn("#2f6fd6");
+       g.beginPath();g.ellipse(0,0,s,s*0.38,0,0,6.283);solid();
+       g.beginPath();g.moveTo(-s*0.9,0);g.lineTo(-s*1.5,-s*0.4);g.lineTo(-s*1.5,s*0.4);g.closePath();solid();
+       g.beginPath();g.arc(s*0.55,-s*0.08,s*0.07,0,6.283);g.stroke();g.restore();}}
+   for(const [t0,wx] of [[0,x0],[1,x0+dir*reach]]){const a=(q-t0)*1.6/0.9;if(a<0||a>=1)continue;
+     const px=X(wx);if(!seen(px,base,60))continue;lineIn("#2f6fd6");
+     for(let j=0;j<2;j++){const kk=a-j*0.25;if(kk<=0)continue;g.globalAlpha=1-kk;const R=T*(6+22*kk);g.beginPath();g.ellipse(px,base,R,R*0.3,0,0,6.283);g.stroke()}
+     g.globalAlpha=1;}}
 }
-function dropAt(i,c,span,HZ){
-  const sd=i*977+c*131,depth=hash(sd+1);
-  return {x0:-0.8+hash(sd)*span,depth,land:HZ+(VIEW.WH-HZ)*(0.08+0.88*depth),s:0.6+0.5*depth,
+function dropAt(i,c,span,HZ,P,off){
+  const sd=i*977+c*131,depth=hash(sd+1),rows=VIEW.rows;
+  /* the wind when this drop let go sets how far it blows sideways on the way down */
+  const drift=windAt(c*P-off)*(0.5+0.35*rows);
+  return {x0:-1.2+hash(sd)*span-drift/2,drift,depth,top:H*(0.17+hash(sd+4)*0.08),
+    land:HZ+(VIEW.WH-HZ)*(0.08+0.88*depth),s:0.6+0.5*depth,
     sz:0.7+hash(sd+2)*0.8,col:MW.drops[Math.floor(hash(sd+3)*MW.drops.length)]};
 }
-function drawDrop(i,c,p,left,span,wind,HZ,T){
-  const d=dropAt(i,c,span,HZ),wx=d.x0+wind*p,px=(wx-left)*W;
-  if(px<-30-VIEW.XM||px>W+30+VIEW.XM)return;
-  const top=-0.08*H,y=top+(d.land-top)*Math.pow(p,1.35),r=4.2*T*d.sz*d.s;
-  /* tilt the drop along the wind */
-  g.save();g.translate(px,y);g.rotate(-0.12);g.strokeStyle=d.col;g.beginPath();
+function drawDrop(i,c,p,left,span,HZ,T,P,off,seen){
+  const d=dropAt(i,c,span,HZ,P,off),px=(d.x0+d.drift*p-left)*W,y=d.top+(d.land-d.top)*Math.pow(p,1.35),r=4.2*T*d.sz*d.s;
+  if(!seen(px,y,30))return;
+  const tilt=Math.atan2(d.drift*W,(d.land-d.top)*1.35*Math.max(0.3,Math.pow(p,0.35)));
+  g.save();g.translate(px,y);g.rotate(-tilt);g.strokeStyle=d.col;g.beginPath();
   g.moveTo(0,-r*2.4);g.bezierCurveTo(r*0.9,-r*0.9,r,r*0.2,0,r);g.bezierCurveTo(-r,r*0.2,-r*0.9,-r*0.9,0,-r*2.4);g.stroke();
   g.restore();
 }
-function drawRipple(i,c,k,left,span,wind,HZ,T){
-  const d=dropAt(i,c,span,HZ),wx=d.x0+wind,px=(wx-left)*W,max=(18+16*d.sz)*T*d.s;
-  if(px<-max-10-VIEW.XM||px>W+max+10+VIEW.XM)return;
+function drawRipple(i,c,k,left,span,HZ,T,P,off,seen){
+  const d=dropAt(i,c,span,HZ,P,off),px=(d.x0+d.drift-left)*W,max=(18+16*d.sz)*T*d.s;
+  if(!seen(px,d.land,max+10))return;
   g.strokeStyle=d.col;
   for(let j=0;j<3;j++){const kk=k-j*0.18;if(kk<=0)continue;const R=max*kk;
     g.globalAlpha=(1-kk)*0.9;g.lineWidth=Math.max(0.8,2.2*T*d.s*(1-kk));
