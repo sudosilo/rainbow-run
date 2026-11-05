@@ -66,8 +66,13 @@ button.on{background:var(--ink);color:#fff}
 
   <div class="row spot">
     <button id="left" aria-label="Move one spot left">&#9664;</button>
-    <b id="spotOut">Spot 1 of 1</b>
+    <b id="spotOut">Spot 1</b>
     <button id="right" aria-label="Move one spot right">&#9654;</button>
+  </div>
+  <div class="row spot">
+    <button id="fewer" aria-label="One phone fewer in the row">&#8722;</button>
+    <b id="rowOut">Row of 1</b>
+    <button id="more" aria-label="One phone more in the row">+</button>
     <button id="auto" class="on">Auto</button>
   </div>
 
@@ -99,8 +104,10 @@ function keep(k,v){try{if(v===undefined)return localStorage.getItem(k);if(v===nu
 /* ---------- room and spot ---------- */
 let seat=0,count=1,loopState=null;
 let manualSpot=parseInt(keep(APP+"-spot"),10)||0;
+let manualRow=parseInt(keep(APP+"-row"),10)||0;
 function live(){return sync.status==="live"}
-function total(){return live()?Math.max(1,count):1}
+/* Row size comes from the server while live. A row size set by hand wins, so phones still line up when the room drops. */
+function total(){return Math.max(1,manualRow||count)}
 function spot(){const n=total();return Math.min(n,Math.max(1,manualSpot||seat+1))}
 
 /* ---------- clock, login, socket ---------- */
@@ -122,7 +129,7 @@ const sync=createBoardSync({
   onStatus:s=>{
     statusEl.dataset.s=s;
     statusEl.textContent=s==="off"?"sync off":s==="no room"?"not in a room":s;
-    if(s==="live")clock.start();else{clock.stop();loopState=null;count=1}
+    if(s==="live")clock.start();else{clock.stop();loopState=null}
     renderSpot();renderPace();
   },
 });
@@ -332,8 +339,9 @@ soundBtn.addEventListener("click",()=>{
 const panel=document.getElementById("panel"),roomEl=document.getElementById("room");
 cv.addEventListener("click",()=>{panel.hidden=!panel.hidden});
 function renderSpot(){
-  document.getElementById("spotOut").textContent="Spot "+spot()+" of "+total();
-  document.getElementById("auto").classList.toggle("on",!manualSpot);
+  document.getElementById("spotOut").textContent="Spot "+spot();
+  document.getElementById("rowOut").textContent="Row of "+total();
+  document.getElementById("auto").classList.toggle("on",!manualSpot&&!manualRow);
 }
 function renderPace(){
   document.getElementById("pace").textContent=bandOn()?"Flying with the band loop at "+Math.round(loopState.tempo)+" bpm":"Own pace, "+OWN_BPM+" bpm, until the band loop plays";
@@ -341,7 +349,10 @@ function renderPace(){
 function setSpot(v){manualSpot=v;keep(APP+"-spot",v?String(v):null);renderSpot()}
 document.getElementById("left").addEventListener("click",()=>setSpot(Math.max(1,spot()-1)));
 document.getElementById("right").addEventListener("click",()=>setSpot(Math.min(total(),spot()+1)));
-document.getElementById("auto").addEventListener("click",()=>setSpot(0));
+function setRow(v){manualRow=v;keep(APP+"-row",v?String(v):null);renderSpot()}
+document.getElementById("fewer").addEventListener("click",()=>setRow(Math.max(1,total()-1)));
+document.getElementById("more").addEventListener("click",()=>setRow(Math.min(12,total()+1)));
+document.getElementById("auto").addEventListener("click",()=>{setRow(0);setSpot(0)});
 function join(){const r=sync.setRoom(roomEl.value);roomEl.value=r;if(!r)statusEl.textContent="type a room code first"}
 document.getElementById("join").addEventListener("click",join);
 roomEl.addEventListener("keydown",e=>{if(e.key==="Enter")join()});
