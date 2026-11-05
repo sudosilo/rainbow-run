@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#d6eef9">
+<title>Rainbow Run</title>
+<style>
+:root{
+  color-scheme:light;
+  --ink:#1f2433;
+  --soft:#5b6478;
+  --card:#ffffffee;
+  --line:#c9d3e0;
+  --go:#2f8f5b;
+  --warn:#c4631d;
+  --chip:#eef3f9;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#d6eef9;overflow:hidden;
+  font-family:ui-rounded,"SF Pro Rounded","Nunito","Trebuchet MS",system-ui,sans-serif;color:var(--ink)}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:manipulation}
+#panel{position:fixed;left:calc(12px + env(safe-area-inset-left,0px));top:calc(12px + env(safe-area-inset-top,0px));
+  width:min(340px,calc(100% - 24px));max-height:calc(100% - 24px);overflow:auto;
+  background:var(--card);border:2px solid var(--ink);border-radius:14px;padding:14px 14px 12px;
+  box-shadow:4px 4px 0 var(--ink)}
+#panel[hidden]{display:none}
+h1{margin:0 0 2px;font-size:22px;letter-spacing:.01em}
+.sub{margin:0 0 12px;color:var(--soft);font-size:14px;line-height:1.35}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 10px}
+input{font:inherit;font-size:16px;padding:8px 10px;border:2px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);min-width:0;flex:1}
+input:focus-visible,button:focus-visible{outline:3px solid #3d74d8;outline-offset:2px}
+button{font:inherit;font-size:15px;padding:8px 12px;border:2px solid var(--ink);border-radius:10px;background:var(--chip);color:var(--ink);cursor:pointer}
+button.on{background:var(--ink);color:#fff}
+.status{font-size:14px;padding:4px 10px;border-radius:999px;background:var(--chip);color:var(--soft)}
+.status[data-s="live"]{background:#dff3e7;color:var(--go)}
+.status[data-s="reconnecting"],.status[data-s="connecting"],.status[data-s="sign in"],.status[data-s="update needed"]{background:#fbeadb;color:var(--warn)}
+.spot{display:flex;align-items:center;gap:8px}
+.spot b{font-size:18px;min-width:76px;text-align:center}
+.note{font-size:13px;color:var(--soft);margin:2px 0 0;line-height:1.35}
+#authRow[hidden]{display:none}
+</style>
+</head>
+<body>
+<canvas id="sky" aria-label="A pixel crow flying with a rainbow trail across every phone in the room"></canvas>
+
+<div id="panel">
+  <h1>Rainbow Run</h1>
+  <p class="sub">Line up phones in spot order. The crow flies off one screen and onto the next.</p>
+
+  <div class="row">
+    <input id="room" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="room code" aria-label="Room code">
+    <button id="join">Join</button>
+  </div>
+  <div class="row">
+    <span class="status" id="syncStatus" data-s="off">not in a room</span>
+    <span class="status" id="clockStat" data-s="off">clock off</span>
+  </div>
+
+  <div class="row" id="authRow" hidden>
+    <input id="authEmail" type="email" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="email" aria-label="Email">
+    <input id="authPass" type="password" autocomplete="current-password" placeholder="password" aria-label="Password">
+    <button id="authIn">Sign in</button>
+    <span class="status" id="authMsg" data-s="off" hidden></span>
+  </div>
+
+  <div class="row spot">
+    <button id="left" aria-label="Move one spot left">&#9664;</button>
+    <b id="spotOut">Spot 1 of 1</b>
+    <button id="right" aria-label="Move one spot right">&#9654;</button>
+    <button id="auto" class="on">Auto</button>
+  </div>
+
+  <div class="row">
+    <button id="sound">Sound off</button>
+    <button id="full">Full screen</button>
+  </div>
+  <p class="note" id="pace">Own pace, 100 bpm</p>
+  <p class="note">Tap the sky to hide or show this panel.</p>
+</div>
+
+<script src="stompbox-lab-v3-config.js"></script>
+<script src="stompbox-lab-v3-supabase.js"></script>
+<script src="stompbox-lab-v3-auth.js"></script>
+<script src="stompbox-lab-v3-sync.js"></script>
+<script src="stompbox-lab-v2-clock.js"></script>
+<script>
+"use strict";
+/* Rainbow Run, a visualizer pedal for the stompbox API.
+   It joins a stompbox room under its own app name. The server hands each Rainbow Run phone a seat,
+   and the seat is the phone's spot in the row. Every phone reads the same server clock and the same
+   loop tempo, works out where the crow is on the long runway, and draws only its own slice of it. */
+const APP="rainbow-run",SCHEMA=1;
+const SYNC_URL=(window.STOMPBOX_LAB_CONFIG&&window.STOMPBOX_LAB_CONFIG.syncUrl)||"";
+const OWN_BPM=100;
+
+function keep(k,v){try{if(v===undefined)return localStorage.getItem(k);if(v===null)localStorage.removeItem(k);else localStorage.setItem(k,v)}catch(e){}return null}
+
+/* ---------- room and spot ---------- */
+let seat=0,count=1,loopState=null;
+let manualSpot=parseInt(keep(APP+"-spot"),10)||0;
+function live(){return sync.status==="live"}
+function total(){return live()?Math.max(1,count):1}
+function spot(){const n=total();return Math.min(n,Math.max(1,manualSpot||seat+1))}
+
+/* ---------- clock, login, socket ---------- */
+const clockStat=document.getElementById("clockStat"),statusEl=document.getElementById("syncStatus");
+const clock=createServerClock({
+  send:m=>sync.send(m.type,m),
+  onChange:(o,rtt)=>{clockStat.dataset.s=clock.synced?"live":"off";clockStat.textContent=clock.synced?"clock locked, trip "+Math.round(rtt)+" ms":"clock off"},
+});
+const SUPA=window.STOMPBOX_LAB_SUPABASE||{};
+const auth=createAuth({app:APP,url:SUPA.url||"",key:SUPA.key||"",onChange:()=>{
+  renderAuth();
+  if(sync.status==="live"&&auth.token)sync.send("auth",{token:auth.token});else sync.connect();
+}});
+const sync=createBoardSync({
+  app:APP,schema:SCHEMA,url:SYNC_URL,
+  ready:()=>!auth.on||!!auth.token,
+  onOpen:()=>{if(auth.on)sync.send("auth",{token:auth.token})},
+  exportState:()=>null,loadState:()=>false,applyChange:()=>{},
+  onStatus:s=>{
+    statusEl.dataset.s=s;
+    statusEl.textContent=s==="off"?"sync off":s==="no room"?"not in a room":s;
+    if(s==="live")clock.start();else{clock.stop();loopState=null;count=1}
+    renderSpot();renderPace();
+  },
+});
+sync.on("pong",m=>clock.pong(m));
+sync.on("seat",m=>{if(typeof m.seat==="number")seat=m.seat;if(typeof m.count==="number")count=m.count;renderSpot()});
+sync.on("loop",m=>{loopState=m.state||null;renderPace()});
+sync.on("auth",m=>{if(!m.ok){say(m.reason||"sign in again");auth.refresh()}else say("")});
+
+/* ---------- shared timing ---------- */
+function nowMs(){return clock.synced?clock.now():Date.now()}
+function bandOn(){const s=loopState;return !!(live()&&s&&s.playing&&!s.idle&&typeof s.tempo==="number"&&typeof s.epoch==="number")}
+/* Beat count at server time t. Follows the band loop while it plays, otherwise a fixed pace from the clock. */
+function beatAt(t){
+  if(!bandOn())return t/(60000/OWN_BPM);
+  const s=loopState,bo=s.barOffset||0,mpb=60000/s.tempo;
+  const p=s.pending;
+  if(p&&typeof p.atBar==="number"&&typeof p.tempo==="number"){
+    const tAt=s.epoch+(p.atBar-bo)*4*mpb;
+    if(t>=tAt)return p.atBar*4+(t-tAt)/(60000/p.tempo);
+  }
+  return bo*4+(t-s.epoch)/mpb;
+}
+function timeOfBeat(b){
+  if(!bandOn())return b*(60000/OWN_BPM);
+  const s=loopState,bo=s.barOffset||0,mpb=60000/s.tempo,p=s.pending;
+  if(p&&typeof p.atBar==="number"&&typeof p.tempo==="number"&&b>=p.atBar*4){
+    return s.epoch+(p.atBar-bo)*4*mpb+(b-p.atBar*4)*(60000/p.tempo);
+  }
+  return s.epoch+(b-bo*4)*mpb;
+}
+
+/* ---------- the crow ---------- */
+const UP=[
+"........k..............",
+".......kks.............",
+"......kkks.............",
+".....kkkks.............",
+"....kkkkks.......kkk...",
+"....kkkkkss....kkkkkk..",
+"...kkkkkkkkkkkkkkkekkbb",
+"kkkkkkkkkkkkkkkkkkkkbbb",
+".kkkkkkkkkkkkkkkkkkk...",
+"kkk..kkkkkkkkkkkkk.....",
+"........kkkkkkk........",
+".......................",
+".......................",
+".......................",
+"......................."];
+const MID=[
+".......................",
+".......................",
+".......................",
+".......................",
+".................kkk...",
+"....kkkkk......kkkkkk..",
+"..kkkkkkkkkkkkkkkekkkbb",
+"kkkkkkkkkkkkkkkkkkkkbbb",
+".kkkkkkkkkkkkkkkkkkk...",
+"kkk..kkkkkkkkkkkkk.....",
+"........kkkkkkk........",
+".......................",
+".......................",
+".......................",
+"......................."];
+const DOWN=[
+".......................",
+".......................",
+".......................",
+".......................",
+".................kkk...",
+"...............kkkkkk..",
+"...kkkkkkkkkkkkkkkekkbb",
+"kkkkkkkkkkkkkkkkkkkkbbb",
+".kkkkkkkkkkkkkkkkkkk...",
+"kkk.kkkkkkkkkkkkkk.....",
+"....kkkkks.kkkk........",
+".....kkkks.............",
+"......kkks.............",
+".......kks.............",
+"........k.............."];
+const FRAMES=[UP,MID,DOWN,MID];
+const SPRITE_COLORS={k:"#1d2130",s:"#41507a",b:"#4b4d57",e:"#ffffff"};
+const CW=23,CH=15;
+
+const RAINBOW=["#e8403a","#f28c28","#f5cf2c","#4cb84a","#3a84e0","#7b52c9"];
+
+/* ---------- drawing ---------- */
+const cv=document.getElementById("sky"),g=cv.getContext("2d");
+let W=0,H=0,DPR=1;
+function size(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);g.setTransform(DPR,0,0,DPR,0,0);g.imageSmoothingEnabled=false}
+addEventListener("resize",size);size();
+
+function hash(n){const x=Math.sin(n*127.1)*43758.5453;return x-Math.floor(x)}
+/* Height of the crow, as a share of the screen, at a given beat count. */
+function flightY(b){return 0.46+0.13*Math.sin(b*Math.PI/4)+0.04*Math.sin(b*Math.PI*0.75)}
+
+function drawSky(left,u,secs){
+  const grd=g.createLinearGradient(0,0,0,H);
+  grd.addColorStop(0,"#bfe3f7");grd.addColorStop(0.62,"#e6f4fb");grd.addColorStop(1,"#fbeedb");
+  g.fillStyle=grd;g.fillRect(0,0,W,H);
+  const n=total();
+  /* clouds drift in world space, so they slide from one phone to the next */
+  const span=n+2;
+  for(let i=0;i<Math.max(3,n*2);i++){
+    let wx=(hash(i+1)*span-secs*0.03*(0.6+hash(i+9)*0.6))%span;if(wx<0)wx+=span;wx-=1;
+    const x=(wx-left)*W,y=H*(0.08+hash(i+5)*0.32),c=Math.max(3,Math.round(u*1.2));
+    if(x<-30*c||x>W+30*c)continue;
+    g.fillStyle="#ffffff";
+    const blocks=[[0,2,16,3],[3,1,10,1],[5,0,5,1],[2,5,12,1]];
+    blocks.forEach(([bx,by,bw,bh])=>g.fillRect(Math.round(x+bx*c),Math.round(y+by*c),bw*c,bh*c));
+  }
+  /* mesas sit on the ground in world space too */
+  const ground=H*0.86,step=Math.max(4,Math.round(u*1.5));
+  g.fillStyle="#e7b98f";
+  for(let px=0;px<W+step;px+=step){
+    const wx=left+px/W,k=Math.floor(wx*6);
+    const h=hash(k*3.1)>0.55?H*(0.05+hash(k)*0.09):H*0.015;
+    g.fillRect(px,Math.round(ground-h),step,Math.ceil(h)+1);
+  }
+  g.fillStyle="#d9a27a";g.fillRect(0,Math.round(ground),W,H-ground);
+}
+
+function drawTrail(left,headX,b,u){
+  /* The trail is the path the crow just flew. One screen is one bar, four beats. */
+  const band=Math.max(2,Math.round(u*1.1)),stripe=band*6,seg=Math.max(4,Math.round(u*2));
+  const tail=headX-2.2;
+  const nose=headX-(CW*Math.max(2,Math.round(u))*0.55)/W;
+  const x0=Math.max(tail,left),x1=Math.min(nose,left+1);
+  if(x1<=x0)return;
+  for(let px=Math.floor((x0-left)*W/seg)*seg;px<=(x1-left)*W;px+=seg){
+    const wx=left+px/W;if(wx<tail||wx>nose)continue;
+    const back=headX-wx,bt=b-back*4;
+    const wob=(Math.floor((wx*W)/seg)%2)?band*0.5:-band*0.5;
+    const top=Math.round(H*flightY(bt)-stripe/2+wob);
+    const fade=Math.min(1,(wx-tail)/0.35);
+    g.globalAlpha=fade;
+    for(let i=0;i<6;i++){g.fillStyle=RAINBOW[i];g.fillRect(px,top+i*band,seg,band)}
+  }
+  g.globalAlpha=1;
+}
+
+function drawCrow(left,headX,b,u){
+  const c=Math.max(2,Math.round(u)),frame=FRAMES[Math.floor(b*4)%4];
+  const x=Math.round((headX-left)*W-CW*c*0.82),y=Math.round(H*flightY(b)-CH*c*0.5);
+  if(x>W||x+CW*c<0)return;
+  for(let r=0;r<CH;r++){const row=frame[r];for(let q=0;q<CW;q++){const ch=row[q];if(ch==="."||!ch)continue;g.fillStyle=SPRITE_COLORS[ch];g.fillRect(x+q*c,y+r*c,c,c)}}
+  /* a blue sheen along the back */
+  g.fillStyle=SPRITE_COLORS.s;g.fillRect(x+8*c,y+7*c,6*c,c);
+}
+
+function drawSpotNumber(){
+  if(panel.hidden)return;
+  const s=spot(),fs=Math.round(Math.min(W,H)*0.5);
+  g.font="800 "+fs+"px ui-rounded,system-ui,sans-serif";g.textAlign="right";g.textBaseline="bottom";
+  g.fillStyle="rgba(31,36,51,0.12)";g.fillText(String(s),W-H*0.05,H*0.98);
+}
+
+function frame(){
+  const t=nowMs(),b=beatAt(t),secs=t/1000;
+  const n=total(),left=spot()-1,u=H/56;
+  const runway=n+1.9;
+  let bars=b/4;let headX=bars%runway;if(headX<0)headX+=runway;headX-=0.6;
+  drawSky(left,u,secs);
+  drawTrail(left,headX,b,u);
+  drawCrow(left,headX,b,u);
+  drawSpotNumber();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------- original chiptune, scheduled on the shared beat ---------- */
+const N=n=>440*Math.pow(2,(n-69)/12);
+const LEAD=[76,0,79,0,81,79,76,0,74,0,76,79,0,72,0,0,76,0,79,0,84,81,79,0,81,0,79,76,74,0,72,0];
+const BASS=[48,48,45,45,41,41,43,43];
+let actx=null,soundOn=false,nextStep=null,schedTimer=null;
+function blip(type,freq,when,len,vol){
+  const o=actx.createOscillator(),v=actx.createGain();
+  o.type=type;o.frequency.value=freq;
+  v.gain.setValueAtTime(0.0001,when);v.gain.exponentialRampToValueAtTime(vol,when+0.008);
+  v.gain.exponentialRampToValueAtTime(0.0001,when+len);
+  o.connect(v);v.connect(actx.destination);o.start(when);o.stop(when+len+0.02);
+}
+function schedule(){
+  if(!soundOn||!actx)return;
+  const t=nowMs(),b=beatAt(t),ahead=b+0.6;
+  if(nextStep===null||nextStep<Math.ceil(b*4)||nextStep>Math.ceil(b*4)+8)nextStep=Math.ceil(b*4);
+  while(nextStep/4<ahead){
+    const st=nextStep,when=actx.currentTime+(timeOfBeat(st/4)-t)/1000;
+    if(when>=actx.currentTime){
+      const i=((st%32)+32)%32,note=LEAD[i];
+      const len=(timeOfBeat((st+1)/4)-timeOfBeat(st/4))/1000;
+      if(note)blip("square",N(note),when,len*0.9,0.07);
+      if(i%4===0)blip("triangle",N(BASS[(i/4)|0]),when,len*3.6,0.16);
+    }
+    nextStep++;
+  }
+}
+const soundBtn=document.getElementById("sound");
+soundBtn.addEventListener("click",()=>{
+  if(!actx){const AC=window.AudioContext||window.webkitAudioContext;actx=new AC()}
+  actx.resume();soundOn=!soundOn;nextStep=null;
+  soundBtn.textContent=soundOn?"Sound on":"Sound off";soundBtn.classList.toggle("on",soundOn);
+  clearInterval(schedTimer);if(soundOn)schedTimer=setInterval(schedule,40);
+});
+
+/* ---------- panel ---------- */
+const panel=document.getElementById("panel"),roomEl=document.getElementById("room");
+cv.addEventListener("click",()=>{panel.hidden=!panel.hidden});
+function renderSpot(){
+  document.getElementById("spotOut").textContent="Spot "+spot()+" of "+total();
+  document.getElementById("auto").classList.toggle("on",!manualSpot);
+}
+function renderPace(){
+  document.getElementById("pace").textContent=bandOn()?"Flying with the band loop at "+Math.round(loopState.tempo)+" bpm":"Own pace, "+OWN_BPM+" bpm, until the band loop plays";
+}
+function setSpot(v){manualSpot=v;keep(APP+"-spot",v?String(v):null);renderSpot()}
+document.getElementById("left").addEventListener("click",()=>setSpot(Math.max(1,spot()-1)));
+document.getElementById("right").addEventListener("click",()=>setSpot(Math.min(total(),spot()+1)));
+document.getElementById("auto").addEventListener("click",()=>setSpot(0));
+function join(){const r=sync.setRoom(roomEl.value);roomEl.value=r;if(!r)statusEl.textContent="type a room code first"}
+document.getElementById("join").addEventListener("click",join);
+roomEl.addEventListener("keydown",e=>{if(e.key==="Enter")join()});
+
+document.getElementById("full").addEventListener("click",()=>{
+  const d=document.documentElement;
+  if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});
+  else if(d.requestFullscreen)d.requestFullscreen().then(()=>{if(screen.orientation&&screen.orientation.lock)screen.orientation.lock("landscape").catch(()=>{})}).catch(()=>{});
+});
+
+/* keep the screen awake while the crow flies */
+let lock=null;
+async function wake(){try{if("wakeLock" in navigator&&document.visibilityState==="visible"&&!lock){lock=await navigator.wakeLock.request("screen");lock.addEventListener("release",()=>{lock=null})}}catch(e){}}
+document.addEventListener("visibilitychange",wake);document.addEventListener("click",wake);wake();
+
+/* login, only shown while the Supabase values are present */
+const authMsg=document.getElementById("authMsg");
+function say(t){authMsg.textContent=t||"";authMsg.hidden=!t}
+function renderAuth(){document.getElementById("authRow").hidden=!auth.on||!!auth.token}
+document.getElementById("authIn").addEventListener("click",async()=>{
+  const e=document.getElementById("authEmail").value.trim(),p=document.getElementById("authPass").value;
+  if(!e||!p){say("type an email and password");return}
+  try{say("signing in");await auth.signIn(e,p);say("")}catch(err){say(err.message||"sign in failed")}
+});
+
+/* a room in the address, like ?room=band1, joins on load */
+const fromUrl=new URLSearchParams(location.search).get("room");
+roomEl.value=sync.room||"";
+renderAuth();renderSpot();renderPace();
+if(fromUrl){sync.setRoom(fromUrl);roomEl.value=sync.room}else sync.connect();
+</script>
+</body>
+</html>
