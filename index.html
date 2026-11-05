@@ -46,10 +46,16 @@ button.on{background:var(--ink);color:#fff}
 .spot b{font-size:18px;min-width:76px;text-align:center}
 .note{font-size:13px;color:var(--soft);margin:2px 0 0;line-height:1.35}
 #authRow[hidden],#rowSize[hidden]{display:none}
+.group{font-size:13px;color:var(--soft);margin:2px 0 4px}
+#scenes .row{gap:6px;margin:0 0 8px}
+#scenes button{font-size:14px;padding:6px 10px}
+#wall{position:fixed;left:0;top:0;border:0;transform-origin:0 0;pointer-events:none;background:#eef3f5;opacity:0;transition:opacity .4s ease}
+canvas{z-index:1}
+#panel,#menu{z-index:2}
 </style>
 </head>
 <body>
-<canvas id="sky" aria-label="A pixel crow flying with a rainbow trail across every phone in the room"></canvas>
+<canvas id="sky" aria-label="A picture that runs across every phone in the room"></canvas>
 
 <button id="menu" class="gone" aria-label="Open the Rainbow Run panel"><span></span><span></span><span></span></button>
 
@@ -98,11 +104,19 @@ button.on{background:var(--ink);color:#fff}
     <button id="fitReset">Reset</button>
   </div>
 
-  <div class="row" id="scenes">
-    <button data-scene="crow" class="on">Crow</button>
-    <button data-scene="highway">Highway</button>
-    <button data-scene="rain">Rain</button>
-    <button data-scene="stars">Stars</button>
+  <div id="scenes">
+    <p class="group">Wall</p>
+    <div class="row"><button data-scene="crow" class="on">Crow</button><button data-scene="highway">Highway</button><button data-scene="rain">Rain</button><button data-scene="stars">Stars</button></div>
+    <p class="group">Roads</p>
+    <div class="row"><button data-scene="cars">Cars</button><button data-scene="carpark">Car park</button><button data-scene="race">Car race</button><button data-scene="bikes">Downhill bikes</button><button data-scene="cheese">Cheese roll</button></div>
+    <p class="group">Sky</p>
+    <div class="row"><button data-scene="planes">Planes</button><button data-scene="birds">Birds</button><button data-scene="satellites">Satellites</button><button data-scene="polar">Polar</button><button data-scene="tornado">Tornado</button></div>
+    <p class="group">Water</p>
+    <div class="row"><button data-scene="fish">Fish</button><button data-scene="galleon">Galleon</button><button data-scene="river">River</button><button data-scene="boatrace">Boat race</button><button data-scene="linkrain">Link rain</button></div>
+    <p class="group">Animals</p>
+    <div class="row"><button data-scene="cats">Cats</button><button data-scene="dogs">Dogs</button><button data-scene="farm">Farm</button><button data-scene="horserace">Horse race</button><button data-scene="ants">Ants</button><button data-scene="snakes">Snakes</button><button data-scene="people">People</button></div>
+    <p class="group">Places</p>
+    <div class="row"><button data-scene="city">City</button><button data-scene="garden">Garden</button><button data-scene="warehouse">Warehouse</button><button data-scene="battle">Battle</button></div>
   </div>
 
   <div class="row">
@@ -132,7 +146,13 @@ function keep(k,v){try{if(v===undefined)return localStorage.getItem(k);if(v===nu
 
 /* ---------- room and spot ---------- */
 let seat=0,count=1,loopState=null;
-const SCENES=["crow","highway","rain","stars"];
+/* The mohave.wtf visualizers, run unchanged inside wall.html. f is the script, sc picks its variant. */
+const MWS={cars:{f:"cars"},carpark:{f:"carpark"},race:{f:"race",sc:"cars"},bikes:{f:"downhill",sc:"bike"},cheese:{f:"downhill",sc:"cheese"},
+  planes:{f:"planes"},birds:{f:"birds"},satellites:{f:"satellites"},polar:{f:"polar"},tornado:{f:"tornado"},
+  fish:{f:"fish"},galleon:{f:"galleon"},river:{f:"river"},boatrace:{f:"race",sc:"boats"},linkrain:{f:"linkrain"},
+  cats:{f:"quad",sc:"cats"},dogs:{f:"quad",sc:"dogs"},farm:{f:"quad",sc:"farm"},horserace:{f:"race",sc:"horses"},
+  ants:{f:"ants"},snakes:{f:"snakes"},people:{f:"people"},city:{f:"city"},garden:{f:"garden"},warehouse:{f:"warehouse"},battle:{f:"battle"}};
+const SCENES=["crow","highway","rain","stars"].concat(Object.keys(MWS));
 const LAYOUTS={row:null,quad:[2,2],nine:[3,3]};
 let layout=LAYOUTS.hasOwnProperty(keep(APP+"-layout"))?keep(APP+"-layout"):"row";
 /* Fit belongs to this phone only: a small zoom and an up or down nudge, so screens with different shapes line up. */
@@ -556,8 +576,34 @@ function drawStars(left,b){
   }
 }
 
+/* ---------- mohave.wtf visualizers across the wall ---------- */
+/* wall.html is sized to the whole wall, one fixed size slot per phone, so every phone runs the same
+   simulation. Each phone scales the frame to cover its own screen and slides it so only its slot shows.
+   The scene restarts together on every phone every few minutes, which keeps small drifts from building up. */
+const PERIOD=360000;let wallEl=null,wallKey="";
+function wallSync(t){
+  if(!MWS[scene]){if(wallEl){wallEl.remove();wallEl=null;wallKey=""}return false}
+  const land=W>=H,SW=land?640:360,SH=land?360:640,q=grid(),cols=q[0],rows=q[1],s=spot()-1,cx=s%cols,cy=Math.floor(s/cols);
+  const cyc=Math.floor(t/PERIOD),key=[scene,cols,rows,SW,cyc].join("|");
+  const sc=Math.max(W/SW,H/SH)*zoom;
+  if(key!==wallKey){
+    if(wallEl)wallEl.remove();
+    const wW=cols*SW,wH=rows*SH,dpr=Math.max(1,Math.min((window.devicePixelRatio||1)*sc,Math.sqrt(6e6/(wW*wH))));
+    let seed=cyc;for(const ch of scene)seed=(seed*31+ch.charCodeAt(0))|0;
+    const m=MWS[scene];wallEl=document.createElement("iframe");wallEl.id="wall";wallEl.setAttribute("aria-hidden","true");wallEl.tabIndex=-1;
+    wallEl.style.width=wW+"px";wallEl.style.height=wH+"px";
+    wallEl.src="wall.html?s="+m.f+"&sc="+(m.sc||"")+"&seed="+(seed>>>0)+"&dpr="+(Math.round(dpr*4)/4);
+    document.body.insertBefore(wallEl,cv);wallKey=key;
+  }
+  const ox=(W-SW*sc)/2-cx*SW*sc,oy=(H-SH*sc)/2-cy*SH*sc+nudge*H;
+  wallEl.style.transform="translate("+ox+"px,"+oy+"px) scale("+sc+")";
+  try{const cw=wallEl.contentWindow;if(cw&&cw.__tick){const st=cw.__tick(t-cyc*PERIOD);wallEl.style.opacity=st==="live"?1:0}}catch(e){}
+  return true;
+}
+
 function frame(){
   const t=nowMs(),b=beatAt(t),secs=t/1000;
+  if(wallSync(t)){g.setTransform(DPR,0,0,DPR,0,0);g.clearRect(0,0,W,H);drawSpotNumber();requestAnimationFrame(frame);return}
   const q=grid(),cols=q[0],rows=q[1],s=spot()-1,cx=s%cols,cy=Math.floor(s/cols),u=H/56;
   VIEW={cols,rows,cx,cy,WH:rows*H,XM:W*(0.04+Math.max(0,(1/zoom-1)/2))};
   g.setTransform(DPR,0,0,DPR,0,0);
