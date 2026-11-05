@@ -112,9 +112,11 @@ canvas{z-index:1}
     <p class="group">Sky</p>
     <div class="row"><button data-scene="planes">Planes</button><button data-scene="birds">Birds</button><button data-scene="satellites">Satellites</button><button data-scene="polar">Polar</button><button data-scene="tornado">Tornado</button></div>
     <p class="group">Water</p>
-    <div class="row"><button data-scene="fish">Fish</button><button data-scene="galleon">Galleon</button><button data-scene="river">River</button><button data-scene="boatrace">Boat race</button><button data-scene="linkrain">Link rain</button></div>
+    <div class="row"><button data-scene="fish">Fish</button><button data-scene="galleon">Galleon</button><button data-scene="river">River</button><button data-scene="boatrace">Boat race</button></div>
     <p class="group">Animals</p>
     <div class="row"><button data-scene="cats">Cats</button><button data-scene="dogs">Dogs</button><button data-scene="farm">Farm</button><button data-scene="horserace">Horse race</button><button data-scene="ants">Ants</button><button data-scene="snakes">Snakes</button><button data-scene="people">People</button></div>
+    <p class="group">Screensavers</p>
+    <div class="row"><button data-scene="plasma">Plasma</button><button data-scene="lines">Lines</button><button data-scene="warp">Warp</button><button data-scene="pipes">Pipes</button><button data-scene="matrix">Matrix</button><button data-scene="blob">Blob</button><button data-scene="bounce">Bounce</button></div>
     <p class="group">Places</p>
     <div class="row"><button data-scene="city">City</button><button data-scene="garden">Garden</button><button data-scene="warehouse">Warehouse</button><button data-scene="battle">Battle</button></div>
   </div>
@@ -146,12 +148,14 @@ function keep(k,v){try{if(v===undefined)return localStorage.getItem(k);if(v===nu
 
 /* ---------- room and spot ---------- */
 let seat=0,count=1,loopState=null;
-/* The mohave.wtf visualizers, run unchanged inside wall.html. f is the script, sc picks its variant. */
+/* Scenes that run inside wall.html: the mohave.wtf visualizers (f is the script, sc picks its variant)
+   and the coffeekit screensavers (g is ck, sc is the mode). */
 const MWS={cars:{f:"cars"},carpark:{f:"carpark"},race:{f:"race",sc:"cars"},bikes:{f:"downhill",sc:"bike"},cheese:{f:"downhill",sc:"cheese"},
   planes:{f:"planes"},birds:{f:"birds"},satellites:{f:"satellites"},polar:{f:"polar"},tornado:{f:"tornado"},
-  fish:{f:"fish"},galleon:{f:"galleon"},river:{f:"river"},boatrace:{f:"race",sc:"boats"},linkrain:{f:"linkrain"},
+  fish:{f:"fish"},galleon:{f:"galleon"},river:{f:"river"},boatrace:{f:"race",sc:"boats"},
   cats:{f:"quad",sc:"cats"},dogs:{f:"quad",sc:"dogs"},farm:{f:"quad",sc:"farm"},horserace:{f:"race",sc:"horses"},
-  ants:{f:"ants"},snakes:{f:"snakes"},people:{f:"people"},city:{f:"city"},garden:{f:"garden"},warehouse:{f:"warehouse"},battle:{f:"battle"}};
+  ants:{f:"ants"},snakes:{f:"snakes"},people:{f:"people"},city:{f:"city"},garden:{f:"garden"},warehouse:{f:"warehouse"},battle:{f:"battle"},
+  plasma:{g:"ck",sc:"plasma"},lines:{g:"ck",sc:"lines"},warp:{g:"ck",sc:"warp"},pipes:{g:"ck",sc:"pipes"},matrix:{g:"ck",sc:"matrix"},blob:{g:"ck",sc:"blob"},bounce:{g:"ck",sc:"bounce"}};
 const SCENES=["crow","highway","rain","stars"].concat(Object.keys(MWS));
 const LAYOUTS={row:null,quad:[2,2],nine:[3,3]};
 let layout=LAYOUTS.hasOwnProperty(keep(APP+"-layout"))?keep(APP+"-layout"):"row";
@@ -592,12 +596,14 @@ function wallSync(t){
     let seed=cyc;for(const ch of scene)seed=(seed*31+ch.charCodeAt(0))|0;
     const m=MWS[scene];wallEl=document.createElement("iframe");wallEl.id="wall";wallEl.setAttribute("aria-hidden","true");wallEl.tabIndex=-1;
     wallEl.style.width=wW+"px";wallEl.style.height=wH+"px";
-    wallEl.src="wall.html?s="+m.f+"&sc="+(m.sc||"")+"&seed="+(seed>>>0)+"&dpr="+(Math.round(dpr*4)/4);
+    wallEl.src="wall.html?s="+(m.f||"")+"&g="+(m.g||"")+"&sc="+(m.sc||"")+"&seed="+(seed>>>0)+"&dpr="+(Math.round(dpr*4)/4);
     document.body.insertBefore(wallEl,cv);wallKey=key;
   }
   const ox=(W-SW*sc)/2-cx*SW*sc,oy=(H-SH*sc)/2-cy*SH*sc+nudge*H;
   wallEl.style.transform="translate("+ox+"px,"+oy+"px) scale("+sc+")";
-  try{const cw=wallEl.contentWindow;if(cw&&cw.__tick){const st=cw.__tick(t-cyc*PERIOD);wallEl.style.opacity=st==="live"?1:0}}catch(e){}
+  /* the band beat for scenes that move to music, as a beat count at a time since the scene started */
+  try{const cw=wallEl.contentWindow,ep=cyc*PERIOD;if(cw&&!cw.__band)cw.__band=function(ms){return {active:bandOn(),beat:beatAt(ep+ms)}}}catch(e){}
+  try{const cw=wallEl.contentWindow;if(cw&&cw.__tick){const st=cw.__tick(t-cyc*PERIOD);if(st==="live"&&!wallEl._shown){wallEl._shown=true;wallEl.style.opacity=1}}}catch(e){}
   return true;
 }
 
