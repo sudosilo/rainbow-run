@@ -22,9 +22,9 @@ function hill(dt){
   const rw=roadW();
   ctx.fillStyle='#d9c9a3';ctx.beginPath();for(let y=0;y<=H;y+=8)ctx.lineTo(roadX(y)-rw/2-8*T,y);for(let y=H;y>=0;y-=8)ctx.lineTo(roadX(y)+rw/2+8*T,y);ctx.fill();
   ctx.fillStyle=MODE==='bike'?'#8f9599':'#9fc585';ctx.beginPath();for(let y=0;y<=H;y+=8)ctx.lineTo(roadX(y)-rw/2,y);for(let y=H;y>=0;y-=8)ctx.lineTo(roadX(y)+rw/2,y);ctx.fill();
-  if(MODE==='bike'){ctx.fillStyle='#f3f1e6';const dash=40*T,gap=30*T,o=scroll%(dash+gap);for(let y=-dash+o;y<H;y+=dash+gap){ctx.fillRect(roadX(y)-1.5*T,y,3*T,dash);}}
-  else{ctx.strokeStyle='rgba(80,130,60,.35)';ctx.lineWidth=1;const o=scroll%14;for(let y=o;y<H;y+=14)for(let k=-5;k<=5;k++){const x=roadX(y)+k*rw/11;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+2,y-4*T);ctx.stroke();}}
-  for(const tr of trees){tr.y+=-sp*dt*MOTION*0+0;let y=((tr.y-scroll*1)%H+H)%H;y=H-y;const x=roadX(y)+tr.side*(rw/2+tr.r+12*T+tr.off*W*0.05);ctx.fillStyle='rgba(40,60,30,.2)';ctx.beginPath();ctx.ellipse(x+4*T,y+4*T,tr.r,tr.r*0.8,0,0,6.283);ctx.fill();ctx.fillStyle=tr.off>0.5?'#5f9a4b':'#4e8a3f';ctx.beginPath();ctx.arc(x,y,tr.r,0,6.283);ctx.fill();}
+  if(MODE==='bike'){ctx.fillStyle='#f3f1e6';const dash=40*T,gap=30*T,o=(dash+gap)-scroll%(dash+gap);for(let y=-dash+o;y<H;y+=dash+gap){ctx.fillRect(roadX(y)-1.5*T,y,3*T,dash);}}
+  else{ctx.strokeStyle='rgba(80,130,60,.35)';ctx.lineWidth=1;const o=14-scroll%14;for(let y=o;y<H;y+=14)for(let k=-5;k<=5;k++){const x=roadX(y)+k*rw/11;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+2,y-4*T);ctx.stroke();}}
+  for(const tr of trees){tr.y+=-sp*dt*MOTION*0+0;let y=((tr.y-scroll*1)%H+H)%H;const x=roadX(y)+tr.side*(rw/2+tr.r+12*T+tr.off*W*0.05);ctx.fillStyle='rgba(40,60,30,.2)';ctx.beginPath();ctx.ellipse(x+4*T,y+4*T,tr.r,tr.r*0.8,0,0,6.283);ctx.fill();ctx.fillStyle=tr.off>0.5?'#5f9a4b':'#4e8a3f';ctx.beginPath();ctx.arc(x,y,tr.r,0,6.283);ctx.fill();}
 }
 function head(x,y,s,col){ctx.fillStyle=col;ctx.beginPath();ctx.ellipse(x,y,3.6*s,4.2*s,0,0,6.283);ctx.fill();ctx.fillStyle='rgba(255,255,255,.4)';ctx.fillRect(x-0.6*s,y-3.6*s,1.2*s,7*s);}
 function bike(r,s,t){
@@ -82,6 +82,7 @@ function frame(now){
     const x=roadX(r.y)+r.u*roadW()*0.4+Math.sin(t*0.4+r.seed)*8*T;
     ctx.save();ctx.translate(x,r.y);
     if(r.crash>0){r.spin=(r.spin||0)+dt*8;ctx.rotate(r.spin);}
+    if(MODE==='bike')ctx.rotate(Math.PI);
     ctx.fillStyle='rgba(0,0,0,.14)';ctx.beginPath();ctx.ellipse(3*T,4*T,8*s,10*s,0,0,6.283);ctx.fill();
     const L=MODE==='bike'?bike(r,s,t):runner(r,s,t);
     ctx.restore();

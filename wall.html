@@ -78,7 +78,9 @@ window.FLEET_DATA={RAW:RAW.join("\n"),DATES:DATES,REAL:REAL};
 (function(){
   const q=new URLSearchParams(location.search),file=(q.get("s")||"").replace(/[^a-z]/g,""),sc=(q.get("sc")||"").replace(/[^a-z]/g,"");
   if(sc)document.body.dataset.scene=sc;
-  ["mw/viz-common.js","mw/"+file+".js"].forEach(function(src){const el=document.createElement("script");el.src=src;el.async=false;document.body.appendChild(el)});
+  /* g=ck runs a coffeekit screensaver, anything else runs a mohave.wtf visualizer */
+  const list=q.get("g")==="ck"?["ck/coffeekit.js"]:["mw/viz-common.js","mw/"+file+".js"];
+  list.forEach(function(src){const el=document.createElement("script");el.src=src;el.async=false;document.body.appendChild(el)});
 })();
 </script>
 </body>
