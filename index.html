@@ -56,6 +56,8 @@ button.on{background:var(--ink);color:#fff}
 #wall{position:fixed;left:0;top:0;border:0;transform-origin:0 0;pointer-events:none;background:#eef3f5;opacity:0;transition:opacity .4s ease}
 canvas{z-index:1}
 #panel,#menu{z-index:2}
+#stadiumLinks{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.stad{display:block;text-align:center;text-decoration:none;font-weight:700;font-size:.9rem;padding:10px 8px;border-radius:10px;background:#2f6fd6;color:#fff;border:1px solid #2f6fd6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style>
 <link rel="manifest" href="rainbow-run-v1.webmanifest">
 <link rel="icon" href="rainbow-run-v1-icon-192.png">
@@ -68,6 +70,8 @@ canvas{z-index:1}
 
 <div id="panel">
   <h1>Rainbow Run</h1>
+  <!-- BLUE PHONE: stadium links sit right under the title, so they show before the panel fades -->
+  <div class="row" id="stadiumLinks"><a class="stad" href="rainbow-run-stadium-host-v1.html">Stadium host</a><a class="stad" href="rainbow-run-stadium-v1.html">Stadium seat</a></div>
   <p class="sub">Line up phones in spot order, a row or a grid. Spots count left to right, then down. For rain, a row stacks top to bottom. The picture runs from one screen onto the next.</p>
 
   <div class="row">
@@ -130,8 +134,6 @@ canvas{z-index:1}
     <div class="row"><button data-scene="city">City</button><button data-scene="garden">Garden</button><button data-scene="warehouse">Warehouse</button><button data-scene="battle">Battle</button></div>
   </div>
 
-  <p class="group">Stadium</p>
-  <div class="row"><a href="rainbow-run-stadium-host-v1.html"><button type="button">Stadium host</button></a><a href="rainbow-run-stadium-v1.html"><button type="button">Take a stadium seat</button></a></div>
 
   <div class="row">
     <button id="sound">Sound off</button>
