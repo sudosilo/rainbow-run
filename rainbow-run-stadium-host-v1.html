@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#d6eef9">
+<title>Rainbow Run Stadium Host</title>
+<!-- BLUE PHONE: Rainbow Run stadium mode, the host screen.
+     Unlocked with the host code set on the band server. It sets the seat layout and moves its sections live,
+     runs the light show, launches sound flybys, and prints the seat codes. The preview draws every seat with
+     the same core file the seat phones use, so what it shows is what the stands show. -->
+<style>
+:root{--ink:#1f2433;--soft:#5b6478;--line:#c9d3e0;--blue:#2f6fd6;--chip:#eef3f9;--card:#ffffff}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:#d6eef9;color:var(--ink);
+  font-family:ui-rounded,"SF Pro Rounded","Nunito","Trebuchet MS",system-ui,sans-serif}
+#app{position:fixed;inset:0;display:grid;grid-template-columns:minmax(0,1fr);overflow:hidden;grid-template-rows:auto 40vh auto auto minmax(0,1fr);padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+header{display:flex;align-items:center;gap:8px;padding:10px 16px 6px}
+header h1{margin:0;font-size:1.1rem;color:var(--blue);white-space:nowrap}
+.pill{font-size:.75rem;font-weight:700;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:4px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+header{min-width:0}
+#count{margin-left:auto}
+#pv{width:100%;height:100%;display:block;background:#17202d;touch-action:manipulation}
+#msg{height:1.6em;line-height:1.6em;padding:0 16px;font-size:.8rem;color:var(--soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#tabs{display:flex;gap:6px;padding:6px 16px}
+#tabs button{flex:1;min-width:0;padding:9px 4px}
+#tabs button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+.pane{overflow-y:auto;padding:8px 16px 24px;-webkit-overflow-scrolling:touch}
+.pane[hidden]{display:none}
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:0 0 10px}
+.lab{font-size:.72rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--soft);min-width:6.5em}
+button{font:inherit;font-weight:700;font-size:.85rem;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:9px 12px;cursor:pointer;min-width:2.6em}
+button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+button.go{background:var(--blue);color:#fff;border-color:var(--blue)}
+button:disabled{opacity:.4}
+.val{min-width:5.5em;text-align:center;font-weight:800;font-variant-numeric:tabular-nums}
+input[type=text],input[type=password]{font:inherit;font-size:1rem;padding:9px 12px;border:1px solid var(--line);border-radius:10px;flex:1;min-width:0}
+input[type=color]{width:44px;height:38px;border:1px solid var(--line);border-radius:10px;padding:2px;background:#fff}
+.over{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;background:#d6eef9f2;z-index:5}
+.over[hidden]{display:none}
+.card{width:100%;max-width:400px;background:#fff;border:2px solid var(--blue);border-radius:18px;padding:18px}
+.card h2{margin:0 0 8px;color:var(--blue)}
+.card p{margin:0 0 12px;color:var(--soft);line-height:1.4}
+.card input{width:100%;margin:0 0 10px}
+.card button{width:100%;margin:0 0 8px}
+#print{position:fixed;inset:0;background:#fff;z-index:6;overflow-y:auto;padding:12px}
+#print[hidden]{display:none}
+#printBar{position:sticky;top:0;background:#fff;display:flex;gap:8px;padding:0 0 10px;align-items:center}
+#sheet{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.tag{border:1px dashed #9aa6b8;border-radius:8px;padding:8px;text-align:center;break-inside:avoid}
+.tag svg{width:100%;height:auto}
+.tag b{display:block;font-size:1.1rem;margin-top:4px}
+.tag small{color:var(--soft)}
+@media print{#printBar{display:none}#print{position:static;padding:0}#app,.over{display:none!important}.tag{page-break-inside:avoid}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Stadium Host</h1>
+    <span class="pill" id="conn">not connected</span>
+    <span class="pill" id="count">no seats in</span>
+  </header>
+  <canvas id="pv" aria-label="Every seat in the layout, colored the way the stands show it"></canvas>
+  <div id="msg"></div>
+  <div id="tabs">
+    <button data-tab="show" class="on">Show</button>
+    <button data-tab="layout">Layout</button>
+    <button data-tab="sound">Sound</button>
+    <button data-tab="seats">Seats</button>
+  </div>
+
+  <div class="pane" id="pane-show">
+    <div class="row"><span class="lab">Scene</span>
+      <button data-scene="hold">Hold</button><button data-scene="rainbow">Rainbow</button><button data-scene="wave">Wave</button>
+      <button data-scene="ripple">Ripple</button><button data-scene="beat">Beat</button><button data-scene="check">Line up</button><button data-scene="dark">Dark</button></div>
+    <div class="row"><span class="lab">Colors</span><input type="color" id="colA" value="#2f6fd6" aria-label="First color"><input type="color" id="colB" value="#ffffff" aria-label="Second color"></div>
+    <div class="row"><span class="lab">Speed</span><button data-p="speed" data-d="-0.25">&#8722;</button><span class="val" id="speedOut"></span><button data-p="speed" data-d="0.25">+</button></div>
+    <div class="row"><span class="lab">Detail</span><button data-p="detail" data-d="-1">&#8722;</button><span class="val" id="detailOut"></span><button data-p="detail" data-d="1">+</button></div>
+    <div class="row"><span class="lab">Direction</span><button id="axisAround" class="on">Around</button><button id="axisAcross">Across</button></div>
+    <div class="row"><span class="lab">Beat split</span><button id="splitSec" class="on">Sections</button><button id="splitRows">Rows</button></div>
+    <div class="row"><span class="lab">Card stunt</span><input type="text" id="stuntText" maxlength="24" placeholder="text for the stands" aria-label="Text for the stands"><button id="stuntGo">Show text</button></div>
+    <div class="row"><span class="lab">Picture</span><button id="picPick">Pick picture</button><input type="file" id="picFile" accept="image/*" hidden></div>
+    <div class="row"><span class="lab">Band loop</span><button id="bandGo">Start</button><span class="val" id="bandOut">stopped</span></div>
+  </div>
+
+  <div class="pane" id="pane-layout" hidden>
+    <div class="row"><span class="lab">Preset</span><button data-preset="arena">Arena</button><button data-preset="theater">Theater</button><button data-preset="bowl">Bowl</button><button data-preset="field">Field</button></div>
+    <div class="row"><span class="lab">Section</span><span id="secList"></span></div>
+    <div class="row"><span class="lab">Add</span><button id="addBlock">Straight</button><button id="addArc">Curved</button><button id="delSec">Remove</button></div>
+    <div class="row"><span class="lab">Move</span><button data-k="x" data-d="-0.5">&#9664;</button><button data-k="x" data-d="0.5">&#9654;</button><button data-k="y" data-d="-0.5">&#9650;</button><button data-k="y" data-d="0.5">&#9660;</button><span class="val" id="posOut"></span></div>
+    <div class="row" data-for="block"><span class="lab">Turn</span><button data-k="rot" data-d="-2">&#8722;</button><span class="val" id="rotOut"></span><button data-k="rot" data-d="2">+</button></div>
+    <div class="row" data-for="arc"><span class="lab">Radius</span><button data-k="r" data-d="-0.5">&#8722;</button><span class="val" id="rOut"></span><button data-k="r" data-d="0.5">+</button></div>
+    <div class="row" data-for="arc"><span class="lab">Start angle</span><button data-k="a0" data-d="-1">&#8722;</button><span class="val" id="a0Out"></span><button data-k="a0" data-d="1">+</button></div>
+    <div class="row" data-for="arc"><span class="lab">Reach</span><button data-k="span" data-d="-1">&#8722;</button><span class="val" id="spanOut"></span><button data-k="span" data-d="1">+</button></div>
+    <div class="row"><span class="lab">Rows</span><button data-k="rows" data-d="-1">&#8722;</button><span class="val" id="rowsOut"></span><button data-k="rows" data-d="1">+</button></div>
+    <div class="row"><span class="lab">Front row</span><button data-k="seats" data-d="-1">&#8722;</button><span class="val" id="seatsOut"></span><button data-k="seats" data-d="1">+</button></div>
+    <div class="row"><span class="lab">Row adds</span><button data-k="grow" data-d="-1">&#8722;</button><span class="val" id="growOut"></span><button data-k="grow" data-d="1">+</button></div>
+    <div class="row" data-for="block"><span class="lab">Seat gap</span><button data-k="seatGap" data-d="-0.05">&#8722;</button><span class="val" id="seatGapOut"></span><button data-k="seatGap" data-d="0.05">+</button></div>
+    <div class="row"><span class="lab">Row gap</span><button data-k="rowGap" data-d="-0.05">&#8722;</button><span class="val" id="rowGapOut"></span><button data-k="rowGap" data-d="0.05">+</button></div>
+  </div>
+
+  <div class="pane" id="pane-sound" hidden>
+    <div class="row"><span class="lab">Path</span><button data-path="across" class="on">Across</button><button data-path="front">Front to back</button><button data-path="diagonal">Diagonal</button><button data-path="around">Around</button></div>
+    <div class="row"><span class="lab">Sound</span><button data-tone="siren" class="on">Siren</button><button data-tone="engine">Engine</button><button data-tone="tone">Tone</button></div>
+    <div class="row"><span class="lab">Speed</span><button data-s="speed" data-d="-5">&#8722;</button><span class="val" id="sSpeedOut"></span><button data-s="speed" data-d="5">+</button></div>
+    <div class="row"><span class="lab">Pitch</span><button data-s="f0" data-d="-20">&#8722;</button><span class="val" id="sF0Out"></span><button data-s="f0" data-d="20">+</button></div>
+    <div class="row"><span class="lab">Level</span><button data-s="level" data-d="-0.1">&#8722;</button><span class="val" id="sLevelOut"></span><button data-s="level" data-d="0.1">+</button></div>
+    <div class="row"><span class="lab">This screen</span><button id="hearHost">Listen here off</button></div>
+    <div class="row"><button class="go" id="launch">Launch flyby</button><span class="val" id="durOut"></span></div>
+  </div>
+
+  <div class="pane" id="pane-seats" hidden>
+    <div id="seatRows"></div>
+  </div>
+</div>
+
+<div class="over" id="unlock">
+  <div class="card">
+    <h2>Stadium Host</h2>
+    <p>Type the room code for the show and the host code from the band server.</p>
+    <input type="text" id="roomIn" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="room code" aria-label="Room code">
+    <input type="password" id="codeIn" autocomplete="off" placeholder="host code" aria-label="Host code">
+    <button class="go" id="unlockGo">Unlock</button>
+    <p id="unlockMsg"></p>
+  </div>
+</div>
+
+<div id="print" hidden>
+  <div id="printBar"><button class="go" id="printGo">Print</button><button id="printClose">Close</button><span id="printTitle"></span></div>
+  <div id="sheet"></div>
+</div>
+
+<script src="stompbox-lab-v3-config.js"></script>
+<script src="stompbox-lab-v2-clock.js"></script>
+<script src="rainbow-run-stadium-v1-core.js"></script>
+<script src="rainbow-run-stadium-v1-qr.js"></script>
+<script>
+(function(){
+"use strict";
+const APP="rainbow-run";
+const SYNC_URL=(window.STOMPBOX_LAB_CONFIG&&window.STOMPBOX_LAB_CONFIG.syncUrl)||"";
+const $=id=>document.getElementById(id);
+function keep(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){}return null}
+const cleanRoom=r=>String(r||"").trim().toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,24);
+let device=keep(APP+"-host-device-id");
+if(!device){device=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():Date.now().toString(16)+Math.random().toString(16).slice(2);keep(APP+"-host-device-id",device)}
+
+let room=cleanRoom(keep(APP+"-host-room")),code="",sock=null,live=false,host=false,retry=0,retryTimer=null;
+let layout=null,cue=null,loop=null,filled=new Set(),phones=0,all=[],sel=0;
+function say(t){$("msg").textContent=t||""}
+const clock=createServerClock({send:m=>send(m),onChange:()=>{}});
+function send(m){if(sock&&sock.readyState===1){sock.send(JSON.stringify(Object.assign({app:APP},m)));return true}return false}
+const now=()=>clock.synced?clock.now():Date.now();
+
+/* ---------- connection ---------- */
+function connect(){
+  clearTimeout(retryTimer);
+  if(sock){const o=sock;sock=null;o.close()}
+  live=false;host=false;renderConn();
+  if(!SYNC_URL||!room)return;
+  const s=new WebSocket(SYNC_URL+"?app="+APP+"&room="+encodeURIComponent(room)+"&device="+encodeURIComponent(device)+"&mode=stadium-host");
+  sock=s;
+  s.onopen=()=>{if(sock!==s)return;retry=0;live=true;clock.start();send({type:"stadium-host",code:code});renderConn()};
+  s.onmessage=e=>{if(sock!==s)return;let m;try{m=JSON.parse(e.data)}catch(_){return}if(!m||m.app!==APP)return;onMsg(m)};
+  s.onerror=()=>s.close();
+  s.onclose=e=>{if(sock!==s)return;sock=null;live=false;host=false;clock.stop();renderConn();
+    if(e.reason==="too many host code tries"){$("unlock").hidden=false;$("unlockMsg").textContent="Too many wrong host codes. Check the code and unlock again.";return}
+    retryTimer=setTimeout(connect,Math.min(15000,500*Math.pow(2,retry++)))};
+}
+function onMsg(m){
+  if(m.type==="pong"){clock.pong(m);return}
+  if(m.type==="loop"){loop=m.state||null;renderBand();return}
+  if(m.type==="stadium-host"){
+    if(m.ok){host=true;$("unlock").hidden=true;keep(APP+"-host-room",room);keep(APP+"-host-code",code);if(m.reason)say(m.reason);beat()}
+    else{$("unlock").hidden=false;$("unlockMsg").textContent=m.reason||"Not unlocked."}
+    renderConn();return}
+  if(m.type==="stadium-layout"){if(m.layout&&!pendingLayout){layout=m.layout;rebuild()}else if(!m.layout&&!layout)say("No seat layout yet. Pick one in the Layout tab.");return}
+  if(m.type==="stadium-cue"){cue=m.cue;renderShow();return}
+  if(m.type==="stadium-count"){phones=m.phones|0;filled=new Set(m.seats||[]);renderCount();renderSeats();return}
+}
+function renderConn(){$("conn").textContent=!live?"not connected":host?"host, room "+room:"unlocking"}
+function renderCount(){let n=0;all.forEach(s=>{if(filled.has(s.id))n++});$("count").textContent=phones?phones+(phones===1?" phone, ":" phones, ")+n+" seats filled":"no seats in"}
+function beat(){if(host&&document.visibilityState==="visible")send({type:"beat"})}
+setInterval(beat,10000);
+
+$("roomIn").value=room;$("codeIn").value=keep(APP+"-host-code")||"";
+$("unlockGo").addEventListener("click",()=>{
+  const r=cleanRoom($("roomIn").value),c=$("codeIn").value.trim();
+  if(!r){$("roomIn").focus();return}if(!c){$("codeIn").focus();return}
+  room=r;code=c;$("unlockMsg").textContent="Unlocking";connect();
+});
+
+/* ---------- tabs ---------- */
+document.querySelectorAll("#tabs button").forEach(b=>b.addEventListener("click",()=>{
+  document.querySelectorAll("#tabs button").forEach(x=>x.classList.toggle("on",x===b));
+  ["show","layout","sound","seats"].forEach(t=>$("pane-"+t).hidden=t!==b.dataset.tab);
+}));
+
+/* ---------- layout ---------- */
+let pendingLayout=false,layoutTimer=null;
+function sendLayoutSoon(){pendingLayout=true;clearTimeout(layoutTimer);layoutTimer=setTimeout(()=>{pendingLayout=false;send({type:"stadium-layout",layout:layout})},150)}
+function rebuild(){
+  all=layout?STADIUM.placeAll(layout):[];
+  if(layout&&sel>=layout.sections.length)sel=Math.max(0,layout.sections.length-1);
+  renderLayout();renderSeats();renderCount();renderSound();
+}
+const FIELDS={x:[-2000,2000,1],y:[-2000,2000,1],rot:[-360,360,0],r:[1,2000,1],a0:[-720,720,0],span:[1,360,0],rows:[1,200,0],seats:[1,400,0],grow:[-20,40,0],seatGap:[0.3,5,2],rowGap:[0.3,5,2]};
+function fmt(k,v){const d=FIELDS[k][2];return (+v).toFixed(d)+(k==="x"||k==="y"||k==="r"||k==="seatGap"||k==="rowGap"?" m":k==="rot"||k==="a0"||k==="span"?"°":"")}
+function renderLayout(){
+  const box=$("secList");box.textContent="";
+  if(!layout){["x","y","rot","r","a0","span","rows","seats","grow","seatGap","rowGap"].forEach(k=>{const o=$(k+"Out");if(o)o.textContent="none"});$("posOut").textContent="none";return}
+  layout.sections.forEach((s,i)=>{const b=document.createElement("button");b.textContent=s.id;b.classList.toggle("on",i===sel);b.addEventListener("click",()=>{sel=i;renderLayout()});box.appendChild(b)});
+  const s=layout.sections[sel];if(!s)return;
+  document.querySelectorAll("[data-for]").forEach(r=>r.style.visibility=r.dataset.for===s.kind?"visible":"hidden");
+  ["rot","r","a0","span","rows","seats","grow","seatGap","rowGap"].forEach(k=>$(k+"Out").textContent=fmt(k,s[k]));
+  $("posOut").textContent=fmt("x",s.x)+", "+fmt("y",s.y);
+  say((layout.name||"Layout")+", "+STADIUM.count(layout)+" seats of "+STADIUM.MAX+" in "+layout.sections.length+" sections");
+}
+function setLayout(L){layout=L;sel=0;rebuild();sendLayoutSoon()}
+document.querySelectorAll("[data-preset]").forEach(b=>b.addEventListener("click",()=>setLayout(STADIUM.PRESETS[b.dataset.preset]())));
+document.querySelectorAll("[data-k]").forEach(b=>b.addEventListener("click",()=>{
+  if(!layout)return;const s=layout.sections[sel];if(!s)return;
+  const k=b.dataset.k,f=FIELDS[k],old=s[k];
+  s[k]=Math.min(f[1],Math.max(f[0],+(old+ +b.dataset.d).toFixed(2)));
+  if(STADIUM.count(layout)>STADIUM.MAX){s[k]=old;say("That would go over "+STADIUM.MAX+" seats.");return}
+  rebuild();sendLayoutSoon();
+}));
+function nextId(){const used=new Set(layout.sections.map(s=>s.id));for(const c of "ABCDEFGHIJKLMNOPQRSTUVWXYZ")if(!used.has(c))return c;for(let i=1;i<999;i++)if(!used.has("S"+i))return "S"+i}
+function addSection(kind){
+  if(!layout)layout={name:"Custom",sections:[]};
+  const b=all.length?STADIUM.bounds(all):{cx:0,y1:0};
+  const s=kind==="arc"?{id:nextId(),kind:"arc",x:b.cx,y:b.y1+12,r:10,a0:200,span:140,rows:4,seats:20,grow:1,rowGap:0.9,seatGap:0.6,rot:0}
+    :{id:nextId(),kind:"block",x:b.cx,y:b.y1+4,rot:0,rows:4,seats:20,grow:0,seatGap:0.6,rowGap:0.9,r:30,a0:0,span:40};
+  layout.sections.push(s);
+  if(STADIUM.count(layout)>STADIUM.MAX){layout.sections.pop();say("No room for another section under "+STADIUM.MAX+" seats.");return}
+  sel=layout.sections.length-1;layout.name="Custom";rebuild();sendLayoutSoon();
+}
+$("addBlock").addEventListener("click",()=>addSection("block"));
+$("addArc").addEventListener("click",()=>addSection("arc"));
+$("delSec").addEventListener("click",()=>{if(!layout||layout.sections.length<2){say("A layout keeps at least one section.");return}layout.sections.splice(sel,1);sel=Math.max(0,sel-1);rebuild();sendLayoutSoon()});
+
+/* ---------- show ---------- */
+const show={type:"rainbow",speed:1,detail:4,axis:"around",split:"sections"};
+function sendCue(extra){
+  const c=Object.assign({type:show.type,a:$("colA").value,b:$("colB").value,speed:show.speed,spread:show.detail/4,width:0.015*show.detail,rings:show.detail,axis:show.axis,split:show.split,bpm:120,at:now()+600},extra||{});
+  cue=c;send({type:"stadium-cue",cue:c});renderShow();
+}
+function renderShow(){
+  document.querySelectorAll("[data-scene]").forEach(b=>b.classList.toggle("on",!!cue&&cue.type===b.dataset.scene));
+  $("speedOut").textContent=show.speed.toFixed(2)+"x";$("detailOut").textContent=String(show.detail);
+  $("axisAround").classList.toggle("on",show.axis==="around");$("axisAcross").classList.toggle("on",show.axis==="across");
+  $("splitSec").classList.toggle("on",show.split==="sections");$("splitRows").classList.toggle("on",show.split==="rows");
+}
+document.querySelectorAll("[data-scene]").forEach(b=>b.addEventListener("click",()=>{show.type=b.dataset.scene;sendCue()}));
+document.querySelectorAll("[data-p]").forEach(b=>b.addEventListener("click",()=>{
+  const p=b.dataset.p,d=+b.dataset.d;
+  if(p==="speed")show.speed=Math.min(8,Math.max(0.25,show.speed+d));else show.detail=Math.min(16,Math.max(1,show.detail+d));
+  if(cue&&cue.type!=="picture")sendCue();else renderShow();
+}));
+["colA","colB"].forEach(id=>$(id).addEventListener("change",()=>{if(cue&&cue.type!=="picture")sendCue()}));
+$("axisAround").addEventListener("click",()=>{show.axis="around";if(cue)sendCue()});
+$("axisAcross").addEventListener("click",()=>{show.axis="across";if(cue)sendCue()});
+$("splitSec").addEventListener("click",()=>{show.split="sections";if(cue)sendCue()});
+$("splitRows").addEventListener("click",()=>{show.split="rows";if(cue)sendCue()});
+
+/* A card stunt: the picture is shrunk to a small grid the shape of the stands, and each seat shows its cell. */
+function pictureGrid(draw){
+  if(!all.length){say("Set a layout first.");return null}
+  const b=STADIUM.bounds(all),ar=b.w/b.h,cells=3600,w=Math.max(4,Math.min(160,Math.round(Math.sqrt(cells*ar)))),h=Math.max(4,Math.min(160,Math.round(cells/w)));
+  const c=document.createElement("canvas");c.width=w;c.height=h;const g=c.getContext("2d");draw(g,w,h);
+  const px=g.getImageData(0,0,w,h).data,rgb=new Uint8Array(w*h*3);
+  for(let i=0,j=0;i<px.length;i+=4,j+=3){rgb[j]=px[i];rgb[j+1]=px[i+1];rgb[j+2]=px[i+2]}
+  let bin="";for(let i=0;i<rgb.length;i++)bin+=String.fromCharCode(rgb[i]);
+  return {w:w,h:h,data:btoa(bin)};
+}
+$("stuntGo").addEventListener("click",()=>{
+  const text=$("stuntText").value.trim();if(!text){$("stuntText").focus();return}
+  const img=pictureGrid((g,w,h)=>{g.fillStyle=$("colB").value;g.fillRect(0,0,w,h);g.fillStyle=$("colA").value;
+    let size=h;g.font="900 "+size+"px sans-serif";while(size>4&&g.measureText(text).width>w*0.94){size--;g.font="900 "+size+"px sans-serif"}
+    g.textAlign="center";g.textBaseline="middle";g.fillText(text,w/2,h/2+size*0.05)});
+  if(img){show.type="picture";sendCue({type:"picture",img:img})}
+});
+$("picPick").addEventListener("click",()=>$("picFile").click());
+$("picFile").addEventListener("change",()=>{
+  const f=$("picFile").files[0];if(!f)return;
+  const im=new Image();im.onload=()=>{
+    const img=pictureGrid((g,w,h)=>{const s=Math.max(w/im.width,h/im.height),dw=im.width*s,dh=im.height*s;g.drawImage(im,(w-dw)/2,(h-dh)/2,dw,dh)});
+    URL.revokeObjectURL(im.src);if(img){show.type="picture";sendCue({type:"picture",img:img})}
+  };im.src=URL.createObjectURL(f);$("picFile").value="";
+});
+function bandPlaying(){return !!(loop&&loop.playing)}
+function renderBand(){$("bandGo").textContent=bandPlaying()?"Stop":"Start";$("bandOut").textContent=bandPlaying()?(loop.pending||loop).tempo+" bpm":"stopped"}
+$("bandGo").addEventListener("click",()=>{beat();send({type:"transport",action:bandPlaying()?"stop":"start"})});
+
+/* ---------- sound ---------- */
+const snd={path:"across",tone:"siren",speed:60,f0:440,level:0.7};
+let hear=false,actx=null,flight=null;
+function pathLength(b){
+  const pad=Math.max(b.w,b.h)*0.25;
+  if(snd.path==="around")return 2*Math.PI*Math.hypot(b.w,b.h)/2*0.7;
+  if(snd.path==="diagonal")return Math.hypot(b.w+2*pad,b.h+2*pad);
+  if(snd.path==="front")return b.h+2*pad;
+  return b.w+2*pad;
+}
+function duration(){return all.length?Math.min(60,Math.max(1,pathLength(STADIUM.bounds(all))/snd.speed)):0}
+function renderSound(){
+  document.querySelectorAll("[data-path]").forEach(b=>b.classList.toggle("on",b.dataset.path===snd.path));
+  document.querySelectorAll("[data-tone]").forEach(b=>b.classList.toggle("on",b.dataset.tone===snd.tone));
+  $("sSpeedOut").textContent=snd.speed+" m/s";$("sF0Out").textContent=snd.f0+" Hz";$("sLevelOut").textContent=Math.round(snd.level*100)+"%";
+  $("durOut").textContent=all.length?duration().toFixed(1)+" s":"no layout";$("hearHost").textContent=hear?"Listen here on":"Listen here off";$("hearHost").classList.toggle("on",hear);
+}
+document.querySelectorAll("[data-path]").forEach(b=>b.addEventListener("click",()=>{snd.path=b.dataset.path;renderSound()}));
+document.querySelectorAll("[data-tone]").forEach(b=>b.addEventListener("click",()=>{snd.tone=b.dataset.tone;renderSound()}));
+document.querySelectorAll("[data-s]").forEach(b=>b.addEventListener("click",()=>{
+  const k=b.dataset.s,d=+b.dataset.d;
+  if(k==="speed")snd.speed=Math.min(340,Math.max(5,snd.speed+d));
+  if(k==="f0")snd.f0=Math.min(2000,Math.max(60,snd.f0+d));
+  if(k==="level")snd.level=Math.round(Math.min(1,Math.max(0.1,snd.level+d))*10)/10;
+  renderSound();
+}));
+$("hearHost").addEventListener("click",async()=>{hear=!hear;if(hear){try{if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)();await actx.resume()}catch(e){}}renderSound()});
+$("launch").addEventListener("click",()=>{
+  if(!all.length){say("Set a layout first.");return}
+  const s=Object.assign({},snd,{dur:duration(),at:now()+800});
+  send({type:"stadium-sound",sound:s});flight=s;
+  if(hear&&actx){const b=STADIUM.bounds(all);playLocal(s,{x:b.cx,y:b.cy,b:b})}
+  say("Flyby launched, "+s.dur.toFixed(1)+" seconds "+s.path);
+});
+/* The host hears the flyby from the middle of the seats. */
+function playLocal(s,ear){
+  const fb=STADIUM.flyby(s,ear,0.02),start=actx.currentTime+(s.at-now())/1000;
+  const o=actx.createOscillator(),a=actx.createGain();o.type=s.tone==="engine"?"sawtooth":s.tone==="siren"?"square":"sine";
+  a.gain.value=0;o.connect(a);a.connect(actx.destination);
+  const len=(fb.freq.length-1)*fb.step;
+  try{o.frequency.setValueCurveAtTime(fb.freq,start,len);a.gain.setValueCurveAtTime(fb.gain.map(g=>g*0.3),start,len)}catch(e){return}
+  o.start(start);o.stop(start+len+0.05);
+}
+
+/* ---------- seat codes ---------- */
+function renderSeats(){
+  const box=$("seatRows");box.textContent="";
+  if(!layout){box.textContent="No layout yet.";return}
+  layout.sections.forEach(s=>{
+    const list=all.filter(x=>x.sec===s.id),inn=list.filter(x=>filled.has(x.id)).length;
+    const r=document.createElement("div");r.className="row";
+    const l=document.createElement("span");l.className="lab";l.textContent="Section "+s.id;
+    const v=document.createElement("span");v.className="val";v.textContent=inn+" of "+list.length;
+    const b=document.createElement("button");b.textContent="Seat codes";b.addEventListener("click",()=>printSection(s.id));
+    r.append(l,v,b);box.appendChild(r);
+  });
+}
+function seatUrl(id){return location.origin+"/?stadium="+encodeURIComponent(room)+"&seat="+encodeURIComponent(id)}
+function printSection(id){
+  const list=all.filter(x=>x.sec===id),sheet=$("sheet");sheet.textContent="";
+  $("printTitle").textContent="Section "+id+", "+list.length+" seats, room "+room;
+  list.forEach(x=>{
+    const q=qrcode(0,"M");q.addData(seatUrl(x.id));q.make();
+    const t=document.createElement("div");t.className="tag";
+    t.innerHTML=q.createSvgTag({cellSize:3,margin:2,scalable:true})+"<b>"+x.id+"</b><small>Row "+x.row+", seat "+x.seat+"</small>";
+    sheet.appendChild(t);
+  });
+  $("print").hidden=false;
+}
+$("printGo").addEventListener("click",()=>window.print());
+$("printClose").addEventListener("click",()=>{$("print").hidden=true});
+
+/* ---------- preview ---------- */
+const pv=$("pv"),g=pv.getContext("2d");let PW=0,PH=0,view=null;
+function size(){const d=Math.min(2,devicePixelRatio||1),r=pv.getBoundingClientRect();PW=r.width;PH=r.height;pv.width=Math.round(PW*d);pv.height=Math.round(PH*d);g.setTransform(d,0,0,d,0,0)}
+addEventListener("resize",size);
+function draw(){
+  requestAnimationFrame(draw);
+  if(!PW)size();
+  g.fillStyle="#17202d";g.fillRect(0,0,PW,PH);
+  if(!all.length){g.fillStyle="#9fb0c8";g.font="600 14px sans-serif";g.textAlign="center";g.fillText("No seat layout yet",PW/2,PH/2);return}
+  const b=STADIUM.bounds(all),pad=14,sc=Math.min((PW-2*pad)/b.w,(PH-2*pad)/b.h),ox=PW/2-b.cx*sc,oy=PH/2-b.cy*sc;
+  view={sc,ox,oy};
+  const t=now(),bc=cue?STADIUM.beatCount(loop,cue,t):0,ct=cue?(t-cue.at)/1000:0,dot=Math.max(1.2,Math.min(6,sc*0.5));
+  const selId=layout&&layout.sections[sel]?layout.sections[sel].id:"";
+  for(let i=0;i<all.length;i++){
+    const s=all[i],c=cue&&ct>=0?STADIUM.color(cue,s,ct,bc):[60,70,86],x=ox+s.x*sc,y=oy+s.y*sc,on=filled.has(s.id);
+    g.fillStyle="rgb("+c[0]+","+c[1]+","+c[2]+")";g.globalAlpha=on||!phones?1:0.45;
+    const r=on?dot:dot*0.7;g.fillRect(x-r,y-r,r*2,r*2);
+  }
+  g.globalAlpha=1;
+  if(selId){g.strokeStyle="#5aa2ff";g.lineWidth=1.5;const sb=STADIUM.bounds(all.filter(s=>s.sec===selId));g.strokeRect(ox+sb.x0*sc-dot-3,oy+sb.y0*sc-dot-3,sb.w*sc+2*dot+6,sb.h*sc+2*dot+6)}
+  g.fillStyle="#ffffff";g.font="700 11px sans-serif";g.textAlign="center";g.fillText("STAGE",ox+b.cx*sc,Math.max(11,oy+b.y0*sc-dot-6));
+  if(flight){const e=(t-flight.at)/1000;if(e>flight.dur+2)flight=null;else if(e>=0&&e<=flight.dur){const p=STADIUM.sourceAt(flight,b,e);
+    g.fillStyle="#ffd23a";g.beginPath();g.arc(ox+p[0]*sc,oy+p[1]*sc,6,0,6.283);g.fill()}}
+}
+pv.addEventListener("click",e=>{
+  if(!view||!layout)return;const r=pv.getBoundingClientRect(),x=(e.clientX-r.left-view.ox)/view.sc,y=(e.clientY-r.top-view.oy)/view.sc;
+  let best=null,d=Infinity;all.forEach(s=>{const k=Math.hypot(s.x-x,s.y-y);if(k<d){d=k;best=s}});
+  if(best){sel=best.si;renderLayout();say("Section "+best.sec+", nearest seat "+best.id)}
+});
+
+renderShow();renderSound();renderLayout();renderSeats();renderBand();renderCount();draw();
+if(room&&keep(APP+"-host-code")){code=keep(APP+"-host-code");connect()}
+window.RRHost={get layout(){return layout},get filled(){return filled},get phones(){return phones},get host(){return host}};
+})();
+</script>
+</body>
+</html>

@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#d6eef9">
 <title>Rainbow Run</title>
+<script>
+/* BLUE PHONE: stadium mode. A seat code opens this address with stadium and seat in it, and goes straight to the seat page. */
+(function(){try{var q=new URLSearchParams(location.search);if(q.get("stadium"))location.replace("rainbow-run-stadium-v1.html"+location.search)}catch(e){}})();
+</script>
 <style>
 :root{
   color-scheme:light;
@@ -122,6 +126,9 @@ canvas{z-index:1}
     <p class="group">Places</p>
     <div class="row"><button data-scene="city">City</button><button data-scene="garden">Garden</button><button data-scene="warehouse">Warehouse</button><button data-scene="battle">Battle</button></div>
   </div>
+
+  <p class="group">Stadium</p>
+  <div class="row"><a href="rainbow-run-stadium-host-v1.html"><button type="button">Stadium host</button></a><a href="rainbow-run-stadium-v1.html"><button type="button">Take a stadium seat</button></a></div>
 
   <div class="row">
     <button id="sound">Sound off</button>
