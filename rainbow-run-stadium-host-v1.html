@@ -16,7 +16,9 @@
      BLUE PHONE: Every screen picture sends one picture to every seat phone at once, and Video plays one video link
      on every seat phone in step with the server clock.
      BLUE PHONE: Demo runs any Rainbow Run animation across the whole crowd, one phone per pixel, and Video stunt
-     does the same with a video. The preview runs the same frames and colors every seat with what it will show. -->
+     does the same with a video. The preview runs the same frames and colors every seat with what it will show.
+     BLUE PHONE: Timing beacon plays a short chirp through the venue speakers every four seconds, so seat phones
+     can line their clocks up on the room's own sound. -->
 <style>
 :root{--ink:#1f2433;--soft:#5b6478;--line:#c9d3e0;--blue:#2f6fd6;--chip:#eef3f9;--card:#ffffff}
 *{box-sizing:border-box}
@@ -68,6 +70,9 @@ input[type=color]{width:44px;height:38px;border:1px solid var(--line);border-rad
 .tag small{color:var(--soft)}
 @media print{#printBar{display:none}#print{position:static;padding:0}#app,.over{display:none!important}.tag{page-break-inside:avoid}}
 </style>
+<link rel="manifest" href="rainbow-run-v1.webmanifest">
+<link rel="icon" href="rainbow-run-v1-icon-192.png">
+<script>/* BLUE PHONE: preload every show file onto the phone */try{if("serviceWorker" in navigator)navigator.serviceWorker.register("rainbow-run-v1-sw.js").catch(function(){})}catch(e){}</script>
 </head>
 <body>
 <div id="app">
@@ -99,6 +104,7 @@ input[type=color]{width:44px;height:38px;border:1px solid var(--line);border-rad
     <div class="row"><span class="lab">Card stunt</span><input type="text" id="stuntText" maxlength="24" placeholder="text for the stands" aria-label="Text for the stands"><button id="stuntGo">Show text</button></div>
     <div class="row"><span class="lab">Picture</span><button id="picPick">Card stunt picture</button><input type="file" id="picFile" accept="image/*" hidden><button id="screenPick">Every screen picture</button><input type="file" id="screenFile" accept="image/*" hidden></div>
     <div class="row"><span class="lab">Screen fit</span><button id="fitWhole" class="on">Whole picture</button><button id="fitFill">Fill screen</button></div>
+    <div class="row"><span class="lab">Show video</span><select id="vidSel" aria-label="Video saved with the show" style="flex:1;min-width:0;font:inherit;font-size:.9rem;padding:9px;border:1px solid var(--line);border-radius:10px;background:#fff"><option value="">Pick a saved video, or use a link</option></select></div>
     <div class="row"><span class="lab">Video link</span><input type="text" id="vidUrl" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="https link to an mp4 file" aria-label="Video link"></div>
     <div class="row"><span class="lab">Video</span><button id="vidGo">Play video</button><button id="vidLoop">Loop off</button><button id="vidSound">Sound on</button><button id="vidStunt">Whole video</button></div>
     <div class="row"><span class="lab">Band loop</span><button id="bandGo">Start</button><span class="val" id="bandOut">stopped</span></div>
@@ -128,6 +134,8 @@ input[type=color]{width:44px;height:38px;border:1px solid var(--line);border-rad
     <div class="row"><span class="lab">Pitch</span><button data-s="f0" data-d="-20">&#8722;</button><span class="val" id="sF0Out"></span><button data-s="f0" data-d="20">+</button></div>
     <div class="row"><span class="lab">Level</span><button data-s="level" data-d="-0.1">&#8722;</button><span class="val" id="sLevelOut"></span><button data-s="level" data-d="0.1">+</button></div>
     <div class="row"><span class="lab">This screen</span><button id="hearHost">Listen here off</button></div>
+    <div class="row"><span class="lab">Timing beacon</span><button id="beaconGo">Beacon off</button><button id="spkStage" class="on">Speakers at stage</button><button id="spkMid">Speakers in middle</button></div>
+    <div class="row"><span class="lab">Room timing</span><span class="val" id="beaconOut" style="text-align:left;flex:1">beacon off</span></div>
     <div class="row"><button class="go" id="launch">Launch flyby</button><span class="val" id="durOut"></span></div>
   </div>
 
@@ -187,6 +195,7 @@ input[type=color]{width:44px;height:38px;border:1px solid var(--line);border-rad
 <script src="rainbow-run-stadium-v1-core.js"></script>
 <script src="rainbow-run-stadium-v1-qr.js"></script>
 <script src="rainbow-run-stadium-v1-mosaic.js"></script>
+<script src="rainbow-run-stadium-v1-beacon.js"></script>
 <script>
 (function(){
 "use strict";
@@ -231,6 +240,8 @@ function onMsg(m){
   if(m.type==="stadium-cue"){cue=m.cue;renderShow();return}
   if(m.type==="stadium-plan"){if(m.plan){plan=Object.assign(plan,m.plan)}planDirty=true;renderPlan();return}
   if(m.type==="stadium-assigned"){onAssigned(m);return}
+  if(m.type==="stadium-delay"){$("beaconOut").textContent=m.heard+(m.heard===1?" phone hears":" phones hear")+" the beacon, speaker delay "+Math.round(m.delay)+" ms";return}
+  if(m.type==="stadium-beacon"){beaconOn=!!(m.beacon&&m.beacon.on);renderBeacon();return}
   if(m.type==="stadium-count"){phones=m.phones|0;filled=new Set(m.seats||[]);renderCount();renderSeats();return}
 }
 function renderConn(){$("conn").textContent=!live?"not connected":host?"host, room "+room:"unlocking"}
@@ -369,6 +380,9 @@ $("screenFile").addEventListener("change",()=>{
   im.src=URL.createObjectURL(f);
 });
 let vidLoop=false,vidMuted=false,vidStunt=false;
+/* BLUE PHONE: videos saved with the show play from each phone's own copy, so nothing but the cue crosses the network. */
+fetch("rainbow-run-v1-assets.json").then(r=>r.json()).then(j=>{(j.videos||[]).forEach(v=>{const o=document.createElement("option");o.value=v.file;o.textContent=v.name;$("vidSel").appendChild(o)})}).catch(()=>{});
+$("vidSel").addEventListener("change",()=>{if($("vidSel").value)$("vidUrl").value=""});
 $("vidStunt").addEventListener("click",()=>{vidStunt=!vidStunt;$("vidStunt").textContent=vidStunt?"Video stunt":"Whole video";$("vidStunt").classList.toggle("on",vidStunt)});
 /* Demo: every Rainbow Run animation, in the groups its own menu shows. */
 (function(){
@@ -380,8 +394,8 @@ window.__stadiumNow=()=>now();window.__stadiumLoop=()=>loop;
 $("vidLoop").addEventListener("click",()=>{vidLoop=!vidLoop;renderFit()});
 $("vidSound").addEventListener("click",()=>{vidMuted=!vidMuted;renderFit()});
 $("vidGo").addEventListener("click",()=>{
-  let u=$("vidUrl").value.trim();if(!u){$("vidUrl").focus();return}
-  if(!/^https?:\/\//i.test(u))u="https://"+u;u=u.replace(/^http:/i,"https:");
+  let u=$("vidSel").value||$("vidUrl").value.trim();if(!u){$("vidUrl").focus();return}
+  if(u.indexOf("rainbow-run-videos/")!==0){if(!/^https?:\/\//i.test(u))u="https://"+u;u=u.replace(/^http:/i,"https:")}
   sendCue({type:"video",url:u,fit:screenFit,loop:vidLoop,muted:vidMuted,stunt:vidStunt,at:now()+2500});say(vidStunt?"Video stunt starts across the crowd in a moment.":"Video starts on every screen in a moment.");
 });
 renderFit();
@@ -424,6 +438,26 @@ $("launch").addEventListener("click",()=>{
   if(hear&&actx){const b=STADIUM.bounds(all);playLocal(s,{x:b.cx,y:b.cy,b:b})}
   say("Flyby launched, "+s.dur.toFixed(1)+" seconds "+s.path);
 });
+/* ---------- timing beacon ---------- */
+let beaconOn=false,beaconSpk="stage",beaconPlayer=null;
+function speakerSpot(){const b=STADIUM.bounds(all);return beaconSpk==="middle"?{x:b.cx,y:b.cy}:{x:b.cx,y:b.y0-3}}
+function renderBeacon(){
+  $("beaconGo").textContent=beaconOn?"Beacon on":"Beacon off";$("beaconGo").classList.toggle("on",beaconOn);
+  $("spkStage").classList.toggle("on",beaconSpk==="stage");$("spkMid").classList.toggle("on",beaconSpk==="middle");
+  if(!beaconOn)$("beaconOut").textContent="beacon off";
+  if(beaconPlayer)beaconPlayer.set(beaconOn);
+}
+function sendBeacon(){if(!all.length){say("Set a layout first.");return}const p=speakerSpot();send({type:"stadium-beacon",beacon:{on:beaconOn,x:p.x,y:p.y}})}
+$("beaconGo").addEventListener("click",async()=>{
+  if(!all.length){say("Set a layout first.");return}
+  try{if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)();await actx.resume()}catch(e){}
+  if(!beaconPlayer&&actx)beaconPlayer=STADIUM_BEACON.player(actx,()=>now());
+  beaconOn=!beaconOn;renderBeacon();sendBeacon();
+  if(beaconOn){$("beaconOut").textContent="Plug this phone into the venue speakers. Waiting for seats to hear it.";say("Beacon chirps every four seconds through this phone's sound out.")}
+});
+$("spkStage").addEventListener("click",()=>{beaconSpk="stage";renderBeacon();if(beaconOn)sendBeacon()});
+$("spkMid").addEventListener("click",()=>{beaconSpk="middle";renderBeacon();if(beaconOn)sendBeacon()});
+
 /* The host hears the flyby from the middle of the seats. */
 function playLocal(s,ear){
   const fb=STADIUM.flyby(s,ear,0.02),start=actx.currentTime+(s.at-now())/1000;

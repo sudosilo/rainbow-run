@@ -14,7 +14,9 @@
      BLUE PHONE: a picture cue puts the same picture on every screen, and a video cue plays the same video link on
      every screen, kept in step with the server clock.
      BLUE PHONE: a demo cue runs one of the Rainbow Run animations, and a video stunt runs a video, across the whole
-     crowd: each phone runs the same frame on a small hidden screen and shows the color under its own seat. -->
+     crowd: each phone runs the same frame on a small hidden screen and shows the color under its own seat.
+     BLUE PHONE: while the host plays the timing beacon through the venue speakers, the phone listens for it and sets
+     its clock against the room's own sound, after taking off the time the sound took to reach its seat. -->
 <style>
 :root{--ink:#1f2433;--soft:#5b6478;--line:#c9d3e0;--blue:#2f6fd6;--card:#ffffffee}
 *{box-sizing:border-box}
@@ -36,6 +38,9 @@ button{font:inherit;font-weight:700;font-size:1rem;border-radius:12px;border:0;p
 button.ghost{background:#eef3f9;color:var(--ink);border:1px solid var(--line)}
 .big{font-size:2rem;font-weight:800;color:var(--ink);margin:0 0 6px}
 </style>
+<link rel="manifest" href="rainbow-run-v1.webmanifest">
+<link rel="icon" href="rainbow-run-v1-icon-192.png">
+<script>/* BLUE PHONE: preload every show file onto the phone */try{if("serviceWorker" in navigator)navigator.serviceWorker.register("rainbow-run-v1-sw.js").catch(function(){})}catch(e){}</script>
 </head>
 <body>
 <div id="light"></div>
@@ -58,6 +63,7 @@ button.ghost{background:#eef3f9;color:var(--ink);border:1px solid var(--line)}
     <h1>You're in seat</h1>
     <div class="big" id="startSeat"></div>
     <p>Turn your brightness and volume up, hold the screen toward the stage, and tap to join the show.</p>
+    <p id="preload">Loading the show onto this phone</p>
     <button id="startGo">Join the show</button>
   </div>
 </div>
@@ -75,6 +81,7 @@ button.ghost{background:#eef3f9;color:var(--ink);border:1px solid var(--line)}
 <script src="stompbox-lab-v2-clock.js"></script>
 <script src="rainbow-run-stadium-v1-core.js"></script>
 <script src="rainbow-run-stadium-v1-mosaic.js"></script>
+<script src="rainbow-run-stadium-v1-beacon.js"></script>
 <script>
 (function(){
 "use strict";
@@ -95,6 +102,27 @@ let sock=null,live=false,retry=0,retryTimer=null,status="not connected";
 let layout=null,me=null,cue=null,loop=null,joined=false,actx=null,wake=null;
 
 const clock=createServerClock({send:m=>send(m),onChange:()=>{}});
+/* Server time on this phone: the network clock, minus what the room's sound says this phone is off by. */
+let corr=0,heardList=[],delay=null,beacon=null,listening=null,heardAt=0,lastHeardSend=0;
+const rawNow=()=>clock.synced?clock.now():Date.now();
+function nowS(){return rawNow()-corr}
+function onHeard(err){
+  heardAt=Date.now();
+  if(Date.now()-lastHeardSend>3000){lastHeardSend=Date.now();send({type:"stadium-heard",err:Math.round(err*10)/10})}
+  if(delay===null)return;
+  heardList.push(err-delay);if(heardList.length>5)heardList.shift();
+  const sorted=heardList.slice().sort((a,b)=>a-b),mid=sorted[Math.floor(sorted.length/2)];
+  if(Math.abs(mid)<400)corr=corr*0.5+mid*0.5;
+}
+async function listen(){
+  if(listening||!beacon||!beacon.on||!actx||!navigator.mediaDevices)return;
+  listening="asking";
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    listening=await STADIUM_BEACON.listener(actx,stream,rawNow,()=>me&&beacon?{x:me.x,y:me.y,sx:beacon.x,sy:beacon.y}:null,onHeard);
+  }catch(e){listening="no"}
+}
+function unlisten(){if(listening&&listening.stop)listening.stop();listening=null;corr=0;heardList=[]}
 function send(m){if(sock&&sock.readyState===1){sock.send(JSON.stringify(Object.assign({app:APP},m)));return true}return false}
 
 function connect(){
@@ -117,6 +145,8 @@ function onMsg(m){
   if(m.type==="stadium-layout"){layout=m.layout||null;me=layout?STADIUM.place(layout,seatId):null;return}
   if(m.type==="stadium-cue"){cue=m.cue||null;return}
   if(m.type==="stadium-sound"){playFlyby(m.sound);return}
+  if(m.type==="stadium-beacon"){beacon=m.beacon||null;if(beacon&&beacon.on){if(joined)listen()}else unlisten();return}
+  if(m.type==="stadium-delay"){delay=typeof m.delay==="number"?m.delay:null;return}
 }
 
 /* ---------- picture and video on the whole screen ---------- */
@@ -146,7 +176,7 @@ function media(now){
 
 function c0(){return cue&&cue.type==="video"?cue:null}
 /* The page the hidden animation runs in reads the shared clock and band loop from here. */
-window.__stadiumNow=()=>clock.synced?clock.now():Date.now();
+window.__stadiumNow=()=>nowS();
 window.__stadiumLoop=()=>loop;
 let mosaicCol=null;
 function mosaicColor(now){
@@ -164,9 +194,9 @@ const light=$("light");let lastCol="";
 function frame(){
   requestAnimationFrame(frame);
   if(!joined)return;
-  media(clock.synced?clock.now():Date.now());
+  media(nowS());
   let col=[24,32,44];
-  if(me&&cue){const now=clock.synced?clock.now():Date.now(),t=(now-cue.at)/1000;
+  if(me&&cue){const now=nowS(),t=(now-cue.at)/1000;
     const mc=STADIUM_MOSAIC.wants(cue)?mosaicColor(now):null;
     col=mc||(t<0?[24,32,44]:STADIUM.color(cue,me,t,STADIUM.beatCount(loop,cue,now)))}
   else{STADIUM_MOSAIC.make(null);if(!me&&layout)col=[90,96,110]}
@@ -179,7 +209,7 @@ let noiseBuf=null;
 function playFlyby(snd){
   if(!actx||!me||!snd||!(snd.dur>0))return;
   const fb=STADIUM.flyby(snd,me,0.02);
-  const now=clock.synced?clock.now():Date.now();
+  const now=nowS();
   let start=actx.currentTime+(snd.at-now)/1000,skip=0;
   if(start<actx.currentTime+0.05){skip=Math.ceil((actx.currentTime+0.05-start)/fb.step);start+=skip*fb.step}
   const F=fb.freq.subarray(skip),G=fb.gain.subarray(skip);
@@ -205,8 +235,11 @@ function stateText(){
   if(!live)return status;
   if(!layout)return "In the room, waiting for the host to set the seats.";
   if(!me)return "Seat "+seatId+" is not in the "+(layout.name||"current")+" layout. Check the seat code, or ask the host.";
-  if(!cue)return "In the room. The show starts when the host starts it.";
-  return "In the room, the show is running.";
+  let t=cue?"In the room, the show is running.":"In the room. The show starts when the host starts it.";
+  if(listening==="no")t+=" The microphone is off, so timing comes from the network.";
+  else if(listening&&Date.now()-heardAt<12000)t+=" Timing is locked to the room's sound, "+Math.round(corr)+" ms off the network clock.";
+  else if(listening)t+=" Listening for the timing beacon.";
+  return t;
 }
 function begin(){
   $("entry").hidden=true;$("startSeat").textContent=seatId;$("start").hidden=false;
@@ -224,7 +257,7 @@ $("startGo").addEventListener("click",async()=>{
   try{if(!actx)actx=new AC();await actx.resume()}catch(e){}
   try{wake=await navigator.wakeLock.request("screen")}catch(e){}
   try{if(document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen()}catch(e){}
-  $("start").hidden=true;joined=true;showChip("Seat "+seatId);
+  $("start").hidden=true;joined=true;showChip("Seat "+seatId);listen();
 });
 document.addEventListener("visibilitychange",async()=>{
   if(document.visibilityState==="visible"&&joined){try{wake=await navigator.wakeLock.request("screen")}catch(e){}try{actx&&actx.resume()}catch(e){}}
@@ -234,9 +267,21 @@ $("infoBack").addEventListener("click",()=>{$("info").hidden=true});
 $("infoMove").addEventListener("click",()=>{$("info").hidden=true;joined=false;$("entry").hidden=false});
 setInterval(()=>{if(!$("info").hidden)$("infoText").textContent=stateText()},1000);
 
+/* BLUE PHONE: how much of the show is already saved on this phone. */
+async function preloadState(){
+  try{
+    const list=(await (await fetch("rainbow-run-v1-assets.json")).json()).files||[];
+    const keys=await caches.keys();let have=0;
+    for(const k of keys){const c=await caches.open(k);for(const f of list)if(await c.match(f))have++;break}
+    const done=have>=list.length&&list.length>0;
+    $("preload").textContent=done?"The whole show is saved on this phone.":"Saving the show onto this phone, "+Math.round(100*have/Math.max(1,list.length))+" percent";
+    if(!done)setTimeout(preloadState,1500);
+  }catch(e){$("preload").textContent=""}
+}
+preloadState();
 if(room&&seatId)begin();else $("entry").hidden=false;
 frame();
-window.RRStadium={get me(){return me},get cue(){return cue},get layout(){return layout},clock:clock,get live(){return live}};
+window.RRStadium={get corr(){return corr},get me(){return me},get cue(){return cue},get layout(){return layout},clock:clock,get live(){return live}};
 })();
 </script>
 </body>
