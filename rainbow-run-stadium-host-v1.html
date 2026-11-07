@@ -35,6 +35,7 @@ header h1{margin:0;font-size:1.05rem;color:var(--blue);white-space:nowrap}
 .pill{font-size:.72rem;font-weight:700;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:4px 9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;text-align:center}
 #conn.ok{border-color:var(--blue);color:var(--blue)}
 #pvWrap{grid-area:pv;position:relative;background:var(--dark);margin:0 12px;border-radius:14px;overflow:hidden;border:2px solid var(--blue)}
+#ytPv{position:absolute;right:8px;bottom:8px;width:42%;aspect-ratio:16/9;background:#000;border:2px solid var(--blue);border-radius:8px;overflow:hidden;display:none;pointer-events:none}
 #pv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:manipulation}
 #msg{grid-area:msg;height:1.9em;line-height:1.9em;padding:0 16px;font-size:.78rem;color:var(--soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #tabs{grid-area:tabs;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px;padding:0 12px 6px}
@@ -120,7 +121,7 @@ input[type=range]{width:100%;accent-color:var(--blue)}
     <span class="pill" id="conn">not connected</span>
     <span class="pill" id="count">no seats in</span>
   </header>
-  <div id="pvWrap"><canvas id="pv" aria-label="Every seat in the layout, colored the way the stands show it"></canvas></div>
+  <div id="pvWrap"><canvas id="pv" aria-label="Every seat in the layout, colored the way the stands show it"></canvas><div id="ytPv"></div></div>
   <div id="msg"></div>
   <div id="tabs">
     <button data-tab="show" class="on">Show</button>
@@ -156,7 +157,7 @@ input[type=range]{width:100%;accent-color:var(--blue)}
     </section>
     <section class="grp"><h3>Video</h3>
       <div class="f" style="grid-template-columns:minmax(0,1fr)"><select id="vidSel" aria-label="Video saved with the show"><option value="">Pick a saved video, or use a link</option></select></div>
-      <div class="f" style="grid-template-columns:minmax(0,1fr)"><input type="url" id="vidUrl" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="https link to an mp4 file" aria-label="Video link"></div>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><input type="url" id="vidUrl" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="YouTube link, or an https link to an mp4" aria-label="Video link"></div>
       <div class="f" style="grid-template-columns:minmax(0,1fr)"><div class="seg three"><button id="vidLoop">Loop off</button><button id="vidSound">Sound on</button><button id="vidStunt">Whole video</button></div></div>
       <div class="f" style="grid-template-columns:minmax(0,1fr)"><button class="go big" id="vidGo">Play video</button></div>
     </section>
@@ -305,6 +306,7 @@ input[type=range]{width:100%;accent-color:var(--blue)}
 <script src="rainbow-run-stadium-v1-qr.js"></script>
 <script src="rainbow-run-stadium-v1-mosaic.js"></script>
 <script src="rainbow-run-stadium-v1-beacon.js"></script>
+<script src="rainbow-run-stadium-v1-youtube.js"></script>
 <script>
 (function(){
 "use strict";
@@ -611,6 +613,10 @@ $("vidLoop").addEventListener("click",()=>{vidLoop=!vidLoop;renderFit()});
 $("vidSound").addEventListener("click",()=>{vidMuted=!vidMuted;renderFit()});
 $("vidGo").addEventListener("click",()=>{
   let u=$("vidSel").value||$("vidUrl").value.trim();if(!u){$("vidUrl").focus();return}
+  /* BLUE PHONE: a YouTube link plays in YouTube's own player on every screen */
+  const yt=$("vidSel").value?null:STADIUM_YT.parse(u);
+  if(yt){STADIUM_YT.error="";sendCue({type:"youtube",id:yt.id,start:yt.start,fit:screenFit,loop:vidLoop,muted:vidMuted,at:now()+3000});
+    say(vidStunt?"YouTube will not let its video run as a stunt, so it plays whole on every screen in a moment.":"YouTube video starts on every screen in a moment.");return}
   if(u.indexOf("rainbow-run-videos/")!==0){if(!/^https?:\/\//i.test(u))u="https://"+u;u=u.replace(/^http:/i,"https:")}
   sendCue({type:"video",url:u,fit:screenFit,loop:vidLoop,muted:vidMuted,stunt:vidStunt,at:now()+2500});say(vidStunt?"Video stunt starts across the crowd in a moment.":"Video starts on every screen in a moment.");
 });
@@ -867,6 +873,7 @@ function draw(){
     const r=on?dot:dot*0.7;g.fillRect(x-r,y-r,r*2,r*2);
   }
   g.globalAlpha=1;
+  STADIUM_YT.sync($("ytPv"),cue,t,{muted:!hear});if(STADIUM_YT.error){say(STADIUM_YT.error+".");STADIUM_YT.error=""}
   if(cue&&(cue.type==="image"||(cue.type==="video"&&!(cue.stunt&&mframe)))&&ct>=0)drawMedia(ct);
   if(selId){g.strokeStyle="#5aa2ff";g.lineWidth=1.5;const sb=STADIUM.bounds(all.filter(s=>s.sec===selId));g.strokeRect(ox+sb.x0*sc-dot-3,oy+sb.y0*sc-dot-3,sb.w*sc+2*dot+6,sb.h*sc+2*dot+6)}
   g.fillStyle="#ffffff";g.font="700 11px sans-serif";g.textAlign="center";g.fillText("STAGE",ox+b.cx*sc,Math.max(11,oy+b.y0*sc-dot-6));
