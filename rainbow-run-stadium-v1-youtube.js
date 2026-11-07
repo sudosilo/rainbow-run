@@ -70,7 +70,7 @@ function target(cue,now){
 
 function sync(el,cue,now,opts){
   opts=opts||{};
-  if(!cue||cue.type!=="youtube"||!cue.id){if(player||key)clear();return}
+  if(!cue||(cue.type!=="youtube"&&cue.type!=="share")||!cue.id){if(player||key)clear();return}
   const k=cue.id+"|"+cue.at;
   if(box!==el){clear();box=el}
   if(key!==k){

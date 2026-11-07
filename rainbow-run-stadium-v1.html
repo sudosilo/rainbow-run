@@ -135,7 +135,7 @@ function connect(){
   if(!SYNC_URL||!room)return;
   const s=new WebSocket(SYNC_URL+"?app="+APP+"&room="+encodeURIComponent(room)+"&device="+encodeURIComponent(device)+"&mode=stadium");
   sock=s;status="connecting";
-  s.onopen=()=>{if(sock!==s)return;retry=0;live=true;status="in the room";clock.start();send({type:"stadium-seat",seat:seatId})};
+  s.onopen=()=>{if(sock!==s)return;retry=0;live=true;status="in the room";clock.start();send({type:"stadium-seat",seat:seatId});sendPos()};
   s.onmessage=e=>{if(sock!==s)return;let m;try{m=JSON.parse(e.data)}catch(_){return}if(!m||m.app!==APP)return;onMsg(m)};
   s.onerror=()=>s.close();
   s.onclose=e=>{if(sock!==s)return;sock=null;live=false;clock.stop();
@@ -145,7 +145,8 @@ function connect(){
 function onMsg(m){
   if(m.type==="pong"){clock.pong(m);return}
   if(m.type==="loop"){loop=m.state||null;return}
-  if(m.type==="stadium-layout"){layout=m.layout||null;me=layout?STADIUM.place(layout,seatId):null;return}
+  if(m.type==="stadium-layout"){layout=m.layout||null;me=layout?STADIUM.place(layout,seatId):null;sendPos();return}
+  if(m.type==="stadium-px"){const h=parseInt(String(m.c||"").slice(1),16);if(h>=0){shareCol=[h>>16&255,h>>8&255,h&255];shareAt=Date.now()}return}
   if(m.type==="stadium-cue"){cue=m.cue||null;return}
   if(m.type==="stadium-sound"){playFlyby(m.sound);return}
   if(m.type==="stadium-beacon"){beacon=m.beacon||null;if(beacon&&beacon.on){if(joined)listen()}else unlisten();return}
@@ -156,7 +157,7 @@ function onMsg(m){
 const pic=$("pic"),vid=$("vid");let picAt=0,vidKey="",lastSync=0;
 function media(now){
   /* BLUE PHONE: a YouTube cue plays YouTube's own player full screen, only once the phone has joined the show */
-  STADIUM_YT.sync($("yt"),joined?cue:null,now);
+  STADIUM_YT.sync($("yt"),joined&&cue&&cue.type==="youtube"?cue:null,now);
   const src=STADIUM_MOSAIC.current(),stuntOk=!!(c0()&&c0().stunt&&!(src&&src.tainted));
   const c=cue,isPic=!!(c&&c.type==="image"&&now>=c.at),isVid=!!(c&&c.type==="video"&&!stuntOk&&now>=c.at-1500);
   if(isPic){if(picAt!==c.at){picAt=c.at;pic.src=c.src}pic.classList.toggle("cover",c.fit==="cover");pic.style.display="block"}
@@ -183,6 +184,9 @@ function c0(){return cue&&cue.type==="video"?cue:null}
 /* The page the hidden animation runs in reads the shared clock and band loop from here. */
 window.__stadiumNow=()=>nowS();
 window.__stadiumLoop=()=>loop;
+/* BLUE PHONE: in a screen share stunt the server sends this seat its own color from the host's shared screen */
+let shareCol=null,shareAt=0;
+function sendPos(){if(me)send({type:"stadium-pos",x:me.x,y:me.y,u:me.u,v:me.v})}
 let mosaicCol=null;
 function mosaicColor(now){
   if(!me||!STADIUM_MOSAIC.wants(cue)){STADIUM_MOSAIC.make(null);return null}
@@ -202,7 +206,7 @@ function frame(){
   media(nowS());
   let col=[24,32,44];
   if(me&&cue){const now=nowS(),t=(now-cue.at)/1000;
-    const mc=STADIUM_MOSAIC.wants(cue)?mosaicColor(now):null;
+    const mc=cue.type==="share"?(shareCol&&Date.now()-shareAt<3000?shareCol:[12,14,18]):STADIUM_MOSAIC.wants(cue)?mosaicColor(now):null;
     col=mc||(t<0?[24,32,44]:STADIUM.color(cue,me,t,STADIUM.beatCount(loop,cue,now)))}
   else{STADIUM_MOSAIC.make(null);if(!me&&layout)col=[90,96,110]}
   const css="rgb("+col[0]+","+col[1]+","+col[2]+")";

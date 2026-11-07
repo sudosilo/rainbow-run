@@ -615,12 +615,52 @@ $("vidGo").addEventListener("click",()=>{
   let u=$("vidSel").value||$("vidUrl").value.trim();if(!u){$("vidUrl").focus();return}
   /* BLUE PHONE: a YouTube link plays in YouTube's own player on every screen */
   const yt=$("vidSel").value?null:STADIUM_YT.parse(u);
-  if(yt){STADIUM_YT.error="";sendCue({type:"youtube",id:yt.id,start:yt.start,fit:screenFit,loop:vidLoop,muted:vidMuted,at:now()+3000});
-    say(vidStunt?"YouTube will not let its video run as a stunt, so it plays whole on every screen in a moment.":"YouTube video starts on every screen in a moment.");return}
+  if(yt){STADIUM_YT.error="";if(vidStunt){startShare(yt);return}
+    stopShare();sendCue({type:"youtube",id:yt.id,start:yt.start,fit:screenFit,loop:vidLoop,muted:vidMuted,at:now()+3000});
+    say("YouTube video starts on every screen in a moment.");return}
+  stopShare();
   if(u.indexOf("rainbow-run-videos/")!==0){if(!/^https?:\/\//i.test(u))u="https://"+u;u=u.replace(/^http:/i,"https:")}
   sendCue({type:"video",url:u,fit:screenFit,loop:vidLoop,muted:vidMuted,stunt:vidStunt,at:now()+2500});say(vidStunt?"Video stunt starts across the crowd in a moment.":"Video starts on every screen in a moment.");
 });
 renderFit();
+
+/* ---------- screen share stunt ----------
+   BLUE PHONE: YouTube will not let a page read its player's picture, but the browser can share its own tab.
+   The host shares this tab, cuts the YouTube player out of it, shrinks it to a small grid the shape of the
+   stands several times a second, and sends that to the server, which hands each seat just its own color. */
+let shareStream=null,shareVid=null,shareTimer=null,shareFrame=null;
+const shareCv=document.createElement("canvas"),shareG=shareCv.getContext("2d",{willReadFrequently:true});
+function stopShare(){clearInterval(shareTimer);shareTimer=null;shareFrame=null;if(shareStream){try{shareStream.getTracks().forEach(k=>k.stop())}catch(e){}}shareStream=null;if(shareVid){shareVid.srcObject=null;shareVid=null}}
+async function startShare(yt){
+  const plain=why=>{stopShare();sendCue({type:"youtube",id:yt.id,start:yt.start,fit:screenFit,loop:vidLoop,muted:vidMuted,at:now()+3000});say(why)};
+  if(!all.length){say("Set a layout first.");return}
+  if(!(navigator.mediaDevices&&navigator.mediaDevices.getDisplayMedia)){plain("This browser cannot share its screen, so the video plays whole on every screen. Chrome on a computer can run the YouTube stunt.");return}
+  stopShare();
+  try{shareStream=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:15},audio:false,preferCurrentTab:true,selfBrowserSurface:"include",surfaceSwitching:"exclude"})}
+  catch(e){plain("Screen sharing was not allowed, so the video plays whole on every screen.");return}
+  shareVid=document.createElement("video");shareVid.muted=true;shareVid.playsInline=true;shareVid.srcObject=shareStream;shareVid.play().catch(()=>{});
+  shareStream.getVideoTracks()[0].addEventListener("ended",()=>{stopShare();say("Screen sharing stopped.")});
+  sendCue({type:"share",id:yt.id,start:yt.start,loop:vidLoop,muted:vidMuted,at:now()+3000});
+  say("YouTube stunt across the crowd. Keep this tab open and on screen.");
+  shareTimer=setInterval(shareTick,110);
+}
+function shareTick(){
+  if(!cue||cue.type!=="share"){stopShare();return}
+  const v=shareVid;if(!v||v.readyState<2||!v.videoWidth)return;
+  const f=$("ytPv").querySelector("iframe")||$("ytPv");const r=f.getBoundingClientRect(),o=$("ytPv").getBoundingClientRect();
+  const x0=Math.max(r.left,o.left),y0=Math.max(r.top,o.top),x1=Math.min(r.right,o.right),y1=Math.min(r.bottom,o.bottom);if(x1-x0<4||y1-y0<4)return;
+  /* the shared tab is this page, so page spots scale straight onto the captured picture */
+  const k=v.videoWidth/innerWidth,sx=x0*k,sy=y0*k,sw=(x1-x0)*k,sh=(y1-y0)*k;
+  const bx=cue.box?boxOf(cue.box):STADIUM.bounds(all),ar=bx.w/bx.h,w=ar>=1?64:Math.max(2,Math.round(64*ar)),h=ar>=1?Math.max(2,Math.round(64/ar)):64;
+  shareCv.width=w;shareCv.height=h;
+  const s=Math.max(w/sw,h/sh),dw=sw*s,dh=sh*s;shareG.fillStyle="#000";shareG.fillRect(0,0,w,h);
+  shareG.drawImage(v,sx,sy,sw,sh,(w-dw)/2,(h-dh)/2,dw,dh);
+  const px=shareG.getImageData(0,0,w,h).data,rgb=new Uint8Array(w*h*3);
+  for(let i=0,j=0;i<px.length;i+=4,j+=3){rgb[j]=px[i];rgb[j+1]=px[i+1];rgb[j+2]=px[i+2]}
+  let bin="";for(let i=0;i<rgb.length;i++)bin+=String.fromCharCode(rgb[i]);
+  send({type:"stadium-frame",w:w,h:h,data:btoa(bin),box:{x0:bx.x0,y0:bx.y0,x1:bx.x0+bx.w,y1:bx.y0+bx.h}});
+  shareFrame={w:w,h:h,data:px};
+}
 
 function bandPlaying(){return !!(loop&&loop.playing)}
 function renderBand(){$("bandGo").textContent=bandPlaying()?"Stop":"Start";$("bandOut").textContent=bandPlaying()?(loop.pending||loop).tempo+" bpm":"stopped"}
@@ -847,7 +887,7 @@ function draw(){
   if(!all.length){g.fillStyle="#9fb0c8";g.font="600 14px sans-serif";g.textAlign="center";g.fillText("No seat layout yet",PW/2,PH/2);return}
   /* BLUE PHONE: while every screen shows a whole picture or video, the seats move to the left and the picture
      gets the right side of the preview, so neither covers the other */
-  const side=!!(cue&&(cue.type==="image"||cue.type==="youtube"||(cue.type==="video"&&!(cue.stunt&&STADIUM_MOSAIC.current()&&!STADIUM_MOSAIC.current().tainted))));
+  const side=!!(cue&&(cue.type==="image"||cue.type==="youtube"||cue.type==="share"||(cue.type==="video"&&!(cue.stunt&&STADIUM_MOSAIC.current()&&!STADIUM_MOSAIC.current().tainted))));
   const MW=side?PW*0.54:PW;
   const b=STADIUM.bounds(all),pad=14,sc=Math.min((MW-2*pad)/b.w,(PH-2*pad)/b.h),ox=MW/2-b.cx*sc,oy=PH/2-b.cy*sc;
   view={sc,ox,oy};
@@ -864,7 +904,7 @@ function draw(){
     const src=STADIUM_MOSAIC.make(pc,mbox.w/mbox.h,()=>now());
     if(src&&src.tainted&&!taintSaid){taintSaid=true;say("That video's site will not let its pixels be read, so it plays whole on each screen instead.")}
     if(src&&ct>=0)mframe=src.grab()||lastFrame;lastFrame=mframe;
-  } else STADIUM_MOSAIC.make(null);
+  } else {STADIUM_MOSAIC.make(null);if(pc&&pc.type==="share"&&shareFrame){mframe=shareFrame;mbox=pc.box?boxOf(pc.box):b}}
   const mcol=s=>mframe?STADIUM_MOSAIC.sample(mframe,(s.x-mbox.x0)/mbox.w,(s.y-mbox.y0)/mbox.h):null;
   for(let i=0;i<all.length;i++){
     const s=all[i],x=ox+s.x*sc,y=oy+s.y*sc;
