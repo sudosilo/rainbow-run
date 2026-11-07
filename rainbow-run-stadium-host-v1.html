@@ -35,7 +35,7 @@ header h1{margin:0;font-size:1.05rem;color:var(--blue);white-space:nowrap}
 .pill{font-size:.72rem;font-weight:700;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:4px 9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;text-align:center}
 #conn.ok{border-color:var(--blue);color:var(--blue)}
 #pvWrap{grid-area:pv;position:relative;background:var(--dark);margin:0 12px;border-radius:14px;overflow:hidden;border:2px solid var(--blue)}
-#ytPv{position:absolute;right:8px;bottom:8px;width:42%;aspect-ratio:16/9;background:#000;border:2px solid var(--blue);border-radius:8px;overflow:hidden;display:none;pointer-events:none}
+#ytPv{position:absolute;right:2%;top:50%;transform:translateY(-50%);width:42%;aspect-ratio:16/9;background:#000;border:2px solid var(--blue);border-radius:8px;overflow:hidden;display:none;pointer-events:none}
 #pv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:manipulation}
 #msg{grid-area:msg;height:1.9em;line-height:1.9em;padding:0 16px;font-size:.78rem;color:var(--soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #tabs{grid-area:tabs;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px;padding:0 12px 6px}
@@ -845,7 +845,11 @@ function draw(){
   if(!PW)size();
   g.fillStyle="#17202d";g.fillRect(0,0,PW,PH);
   if(!all.length){g.fillStyle="#9fb0c8";g.font="600 14px sans-serif";g.textAlign="center";g.fillText("No seat layout yet",PW/2,PH/2);return}
-  const b=STADIUM.bounds(all),pad=14,sc=Math.min((PW-2*pad)/b.w,(PH-2*pad)/b.h),ox=PW/2-b.cx*sc,oy=PH/2-b.cy*sc;
+  /* BLUE PHONE: while every screen shows a whole picture or video, the seats move to the left and the picture
+     gets the right side of the preview, so neither covers the other */
+  const side=!!(cue&&(cue.type==="image"||cue.type==="youtube"||(cue.type==="video"&&!(cue.stunt&&STADIUM_MOSAIC.current()&&!STADIUM_MOSAIC.current().tainted))));
+  const MW=side?PW*0.54:PW;
+  const b=STADIUM.bounds(all),pad=14,sc=Math.min((MW-2*pad)/b.w,(PH-2*pad)/b.h),ox=MW/2-b.cx*sc,oy=PH/2-b.cy*sc;
   view={sc,ox,oy};
   const t=now(),bc=cue?STADIUM.beatCount(loop,cue,t):0,ct=cue?(t-cue.at)/1000:0,dot=Math.max(1.2,Math.min(6,sc*0.5));
   const selId=layout&&layout.sections[sel]?layout.sections[sel].id:"";
@@ -888,7 +892,8 @@ function drawMedia(ct){
   else{const k=cue.at+cue.url;if(pKey!==k){pKey=k;pVid.src=cue.url;pVid.loop=!!cue.loop;pVid.play().catch(()=>{})}
     if(pVid.readyState>=2){el=pVid;if(isFinite(pVid.duration)){let t=cue.loop?ct%pVid.duration:ct;if(Math.abs(pVid.currentTime-t)>0.4&&t<=pVid.duration)pVid.currentTime=t}}}
   if(!el)return;const w=el.videoWidth||el.naturalWidth,h=el.videoHeight||el.naturalHeight;if(!w||!h)return;
-  const s=Math.min(PW*0.45/w,PH*0.6/h),dw=w*s,dh=h*s;g.fillStyle="#000";g.fillRect(PW-dw-14,PH-dh-14,dw+8,dh+8);g.drawImage(el,PW-dw-10,PH-dh-10,dw,dh);
+  const s=Math.min(PW*0.42/w,(PH-24)/h),dw=w*s,dh=h*s,x0=PW*0.56+(PW*0.42-dw)/2,y0=(PH-dh)/2;
+  g.fillStyle="#000";g.fillRect(x0-4,y0-4,dw+8,dh+8);g.drawImage(el,x0,y0,dw,dh);
 }
 pv.addEventListener("click",e=>{
   if(!view||!layout)return;const r=pv.getBoundingClientRect(),x=(e.clientX-r.left-view.ox)/view.sc,y=(e.clientY-r.top-view.oy)/view.sc;
