@@ -21,54 +21,92 @@
      BLUE PHONE: Timing beacon plays a short chirp through the venue speakers every four seconds, so seat phones
      can line their clocks up on the room's own sound. -->
 <style>
-:root{--ink:#1f2433;--soft:#5b6478;--line:#c9d3e0;--blue:#2f6fd6;--chip:#eef3f9;--card:#ffffff}
+/* BLUE PHONE: v1 host screen layout, built for a phone first. Every control sits in a fixed place, so nothing
+   that changes text or opens a message moves a button under a finger. Wide screens put the preview beside it. */
+:root{--ink:#1f2433;--soft:#5b6478;--line:#c9d3e0;--blue:#2f6fd6;--blue2:#e3edfb;--bg:#d6eef9;--card:#ffffff;--dark:#17202d}
 *{box-sizing:border-box}
-html,body{margin:0;height:100%;overflow:hidden;background:#d6eef9;color:var(--ink);
-  font-family:ui-rounded,"SF Pro Rounded","Nunito","Trebuchet MS",system-ui,sans-serif}
-#app{position:fixed;inset:0;display:grid;grid-template-columns:minmax(0,1fr);overflow:hidden;grid-template-rows:auto 40vh auto auto minmax(0,1fr);padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
-header{display:flex;align-items:center;gap:8px;padding:10px 16px 6px}
-header h1{margin:0;font-size:1.1rem;color:var(--blue);white-space:nowrap}
-.pill{font-size:.75rem;font-weight:700;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:4px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-header{min-width:0}
-#count{margin-left:auto}
-#pv{width:100%;height:100%;display:block;background:#17202d;touch-action:manipulation}
-#msg{height:1.6em;line-height:1.6em;padding:0 16px;font-size:.8rem;color:var(--soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#tabs{display:flex;gap:6px;padding:6px 16px}
-#tabs button{flex:1;min-width:0;padding:9px 4px}
-#tabs button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
-.pane{overflow-y:auto;padding:8px 16px 24px;-webkit-overflow-scrolling:touch}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
+  font-family:ui-rounded,"SF Pro Rounded","Nunito","Trebuchet MS",system-ui,sans-serif;-webkit-text-size-adjust:100%}
+#app{position:fixed;inset:0;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto clamp(150px,30vh,320px) auto auto minmax(0,1fr);
+  grid-template-areas:"head" "pv" "msg" "tabs" "pane";overflow:hidden;padding:env(safe-area-inset-top,0px) 0 0}
+header{grid-area:head;display:grid;grid-template-columns:auto minmax(0,1fr) minmax(0,1fr);align-items:center;gap:6px;padding:8px 12px 6px;min-width:0}
+header h1{margin:0;font-size:1.05rem;color:var(--blue);white-space:nowrap}
+.pill{font-size:.72rem;font-weight:700;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:4px 9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;text-align:center}
+#conn.ok{border-color:var(--blue);color:var(--blue)}
+#pvWrap{grid-area:pv;position:relative;background:var(--dark);margin:0 12px;border-radius:14px;overflow:hidden;border:2px solid var(--blue)}
+#pv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:manipulation}
+#msg{grid-area:msg;height:1.9em;line-height:1.9em;padding:0 16px;font-size:.78rem;color:var(--soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#tabs{grid-area:tabs;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px;padding:0 12px 6px}
+#tabs button{padding:9px 2px;font-size:.78rem;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pane{grid-area:pane;overflow-y:auto;overscroll-behavior:contain;padding:2px 12px calc(28px + env(safe-area-inset-bottom,0px));-webkit-overflow-scrolling:touch}
 .pane[hidden]{display:none}
-.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:0 0 10px}
-.lab{font-size:.72rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--soft);min-width:6.5em}
-button{font:inherit;font-weight:700;font-size:.85rem;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:9px 12px;cursor:pointer;min-width:2.6em}
-button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
-button.go{background:var(--blue);color:#fff;border-color:var(--blue)}
+.grp{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 12px 4px;margin:0 0 10px}
+.grp>h3{margin:0 0 8px;font-size:.8rem;letter-spacing:.06em;text-transform:uppercase;color:var(--blue)}
+.grp>p,.note{margin:0 0 10px;font-size:.82rem;line-height:1.4;color:var(--soft)}
+.f{display:grid;grid-template-columns:5.4em minmax(0,1fr);gap:8px;align-items:center;margin:0 0 8px}
+.lab{font-size:.68rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--soft);line-height:1.15}
+.seg{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:5px;min-width:0}
+.f.stack{grid-template-columns:minmax(0,1fr);gap:5px}
+.seg.roomy{grid-template-columns:repeat(auto-fill,minmax(98px,1fr))}
+#kindBox{min-height:144px}
+#uTabs button{white-space:normal;line-height:1.15;padding:6px 4px}
+#uBtns{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:6px}
+#uBtns button{margin:0 0 8px}
+.seg.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.seg.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+.seg.four{grid-template-columns:repeat(4,minmax(0,1fr))}
+.step{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;gap:5px;align-items:center;max-width:260px}
+.step.wide{grid-template-columns:52px 44px minmax(0,1fr) 44px 52px;max-width:none}
+.line{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center;min-width:0}
+button{font:inherit;font-weight:700;font-size:.82rem;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:9px 8px;min-height:40px;cursor:pointer;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;touch-action:manipulation}
+button.on,button.go{background:var(--blue);color:#fff;border-color:var(--blue)}
+button.big{width:100%;min-height:48px;font-size:.95rem}
 button:disabled{opacity:.4}
-.val{min-width:5.5em;text-align:center;font-weight:800;font-variant-numeric:tabular-nums}
-input[type=text],input[type=password],input[type=email]{font:inherit;font-size:1rem;padding:9px 12px;border:1px solid var(--line);border-radius:10px;flex:1;min-width:0}
-input[type=color]{width:44px;height:38px;border:1px solid var(--line);border-radius:10px;padding:2px;background:#fff}
-.over{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;background:#d6eef9f2;z-index:5}
+.val{text-align:center;font-weight:800;font-variant-numeric:tabular-nums;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.val.left{text-align:left;font-weight:700;font-size:.82rem;white-space:normal}
+input[type=text],input[type=password],input[type=email],input[type=url],select{font:inherit;font-size:1rem;padding:9px 11px;border:1px solid var(--line);border-radius:10px;width:100%;min-width:0;background:#fff;color:var(--ink);min-height:42px}
+input[type=color]{width:100%;height:40px;border:1px solid var(--line);border-radius:10px;padding:2px;background:#fff}
+input[type=range]{width:100%;accent-color:var(--blue)}
+#secList{display:flex;gap:5px;overflow-x:auto;padding:1px 0}
+#secList button{flex:none;min-width:44px}
+.hidden-keep{visibility:hidden}
+.over{position:fixed;inset:0;display:flex;align-items:flex-start;justify-content:center;padding:max(16px,env(safe-area-inset-top,0px)) 12px 16px;background:#d6eef9f2;z-index:5;overflow-y:auto}
 .over[hidden]{display:none}
-.card{width:100%;max-width:400px;background:#fff;border:2px solid var(--blue);border-radius:18px;padding:18px}
-.card h2{margin:0 0 8px;color:var(--blue)}
-.card p{margin:0 0 12px;color:var(--soft);line-height:1.4}
-.card input{width:100%;margin:0 0 10px}
+.card{width:100%;max-width:420px;background:#fff;border:2px solid var(--blue);border-radius:18px;padding:16px;margin-top:4vh}
+.card h2{margin:0 0 10px;color:var(--blue);font-size:1.25rem}
+.card p{margin:0 0 10px;color:var(--soft);line-height:1.4;font-size:.86rem}
+.card input{margin:0 0 8px}
 .card button{width:100%;margin:0 0 8px}
-.grow{display:flex;align-items:center;gap:6px;margin:0 0 8px}
-.grow .ctl{display:flex;align-items:center;gap:4px;flex:none;width:9.5em}
-.grow .ctl b{min-width:3.2em;font-size:.8rem}
-.grow .ctl button{padding:6px 8px;min-width:2.2em}
+.card .seg button{margin:0}
+#uTabs{margin:0 0 10px}
+#unlockMsg{min-height:2.8em;color:var(--blue);font-weight:700}
+.grow{display:grid;grid-template-columns:9.5em minmax(0,1fr);gap:6px;align-items:center;margin:0 0 8px}
+.grow .ctl{display:grid;grid-template-columns:36px minmax(0,1fr) 36px;gap:3px;align-items:center}
+.grow .ctl b{font-size:.78rem;text-align:center;white-space:nowrap}
+.grow .ctl button{padding:4px;min-height:34px}
 .cells{display:flex;gap:3px;overflow-x:auto;padding:2px 0}
-.cell{flex:none;width:22px;height:22px;border-radius:5px;border:1px solid #2f6fd6;background:#2f6fd6;padding:0;min-width:0}
+.cell{flex:none;width:24px;height:24px;min-height:0;border-radius:5px;border:1px solid var(--blue);background:var(--blue);padding:0}
 .cell.off{background:#fff;border-style:dashed;border-color:#9aa6b8}
+.hrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center;padding:6px 0;border-top:1px solid #eef2f7}
+.hrow span{font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.srow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;padding:6px 0;border-top:1px solid #eef2f7}
+.srow:first-child{border-top:0}
 #print{position:fixed;inset:0;background:#fff;z-index:6;overflow-y:auto;padding:12px}
 #print[hidden]{display:none}
-#printBar{position:sticky;top:0;background:#fff;display:flex;gap:8px;padding:0 0 10px;align-items:center}
+#printBar{position:sticky;top:0;background:#fff;display:grid;grid-template-columns:100px 100px minmax(0,1fr);gap:8px;padding:0 0 10px;align-items:center}
 #sheet{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
 .tag{border:1px dashed #9aa6b8;border-radius:8px;padding:8px;text-align:center;break-inside:avoid}
 .tag svg{width:100%;height:auto}
 .tag b{display:block;font-size:1.1rem;margin-top:4px}
 .tag small{color:var(--soft)}
+/* a wide screen puts the preview on the left and the controls on the right */
+@media (min-width:860px){
+  #app{grid-template-columns:minmax(0,1fr) minmax(380px,460px);grid-template-rows:auto auto auto minmax(0,1fr);
+    grid-template-areas:"head head" "pv msg" "pv tabs" "pv pane";max-width:1400px;margin:0 auto}
+  #pvWrap{margin:0 0 16px 16px}
+  header{grid-template-columns:auto minmax(0,14em) minmax(0,14em);justify-content:start}
+}
 @media print{#printBar{display:none}#print{position:static;padding:0}#app,.over{display:none!important}.tag{page-break-inside:avoid}}
 </style>
 <link rel="manifest" href="rainbow-run-v1.webmanifest">
@@ -82,7 +120,7 @@ input[type=color]{width:44px;height:38px;border:1px solid var(--line);border-rad
     <span class="pill" id="conn">not connected</span>
     <span class="pill" id="count">no seats in</span>
   </header>
-  <canvas id="pv" aria-label="Every seat in the layout, colored the way the stands show it"></canvas>
+  <div id="pvWrap"><canvas id="pv" aria-label="Every seat in the layout, colored the way the stands show it"></canvas></div>
   <div id="msg"></div>
   <div id="tabs">
     <button data-tab="show" class="on">Show</button>
@@ -90,90 +128,149 @@ input[type=color]{width:44px;height:38px;border:1px solid var(--line);border-rad
     <button data-tab="sound">Sound</button>
     <button data-tab="plan">Plan</button>
     <button data-tab="seats">Seats</button>
+    <button data-tab="access">Access</button>
   </div>
 
   <div class="pane" id="pane-show">
-    <div class="row"><span class="lab">Scene</span>
-      <button data-scene="hold">Hold</button><button data-scene="rainbow">Rainbow</button><button data-scene="wave">Wave</button>
-      <button data-scene="ripple">Ripple</button><button data-scene="beat">Beat</button><button data-scene="check">Line up</button><button data-scene="dark">Dark</button></div>
-    <div class="row"><span class="lab">Demo</span><select id="demoSel" aria-label="Rainbow Run animation to run across the crowd" style="flex:1;min-width:0;font:inherit;font-size:.9rem;padding:9px;border:1px solid var(--line);border-radius:10px;background:#fff"></select></div>
-    <div class="row"><span class="lab">Colors</span><input type="color" id="colA" value="#2f6fd6" aria-label="First color"><input type="color" id="colB" value="#ffffff" aria-label="Second color"></div>
-    <div class="row"><span class="lab">Speed</span><button data-p="speed" data-d="-0.25">&#8722;</button><span class="val" id="speedOut"></span><button data-p="speed" data-d="0.25">+</button></div>
-    <div class="row"><span class="lab">Detail</span><button data-p="detail" data-d="-1">&#8722;</button><span class="val" id="detailOut"></span><button data-p="detail" data-d="1">+</button></div>
-    <div class="row"><span class="lab">Direction</span><button id="axisAround" class="on">Around</button><button id="axisAcross">Across</button></div>
-    <div class="row"><span class="lab">Beat split</span><button id="splitSec" class="on">Sections</button><button id="splitRows">Rows</button></div>
-    <div class="row"><span class="lab">Card stunt</span><input type="text" id="stuntText" maxlength="24" placeholder="text for the stands" aria-label="Text for the stands"><button id="stuntGo">Show text</button></div>
-    <div class="row"><span class="lab">Picture</span><button id="picPick">Card stunt picture</button><input type="file" id="picFile" accept="image/*" hidden><button id="screenPick">Every screen picture</button><input type="file" id="screenFile" accept="image/*" hidden></div>
-    <div class="row"><span class="lab">Screen fit</span><button id="fitWhole" class="on">Whole picture</button><button id="fitFill">Fill screen</button></div>
-    <div class="row"><span class="lab">Show video</span><select id="vidSel" aria-label="Video saved with the show" style="flex:1;min-width:0;font:inherit;font-size:.9rem;padding:9px;border:1px solid var(--line);border-radius:10px;background:#fff"><option value="">Pick a saved video, or use a link</option></select></div>
-    <div class="row"><span class="lab">Video link</span><input type="text" id="vidUrl" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="https link to an mp4 file" aria-label="Video link"></div>
-    <div class="row"><span class="lab">Video</span><button id="vidGo">Play video</button><button id="vidLoop">Loop off</button><button id="vidSound">Sound on</button><button id="vidStunt">Whole video</button></div>
-    <div class="row"><span class="lab">Band loop</span><button id="bandGo">Start</button><span class="val" id="bandOut">stopped</span></div>
+    <section class="grp"><h3>Light show</h3>
+      <div class="seg">
+        <button data-scene="hold">Hold</button><button data-scene="rainbow">Rainbow</button><button data-scene="wave">Wave</button>
+        <button data-scene="ripple">Ripple</button><button data-scene="beat">Beat</button><button data-scene="check">Line up</button><button data-scene="dark">Dark</button></div>
+      <div style="height:8px"></div>
+      <div class="f"><span class="lab">Colors</span><div class="seg two"><input type="color" id="colA" value="#2f6fd6" aria-label="First color"><input type="color" id="colB" value="#ffffff" aria-label="Second color"></div></div>
+      <div class="f"><span class="lab">Speed</span><div class="step"><button data-p="speed" data-d="-0.25" aria-label="Slower">&#8722;</button><span class="val" id="speedOut"></span><button data-p="speed" data-d="0.25" aria-label="Faster">+</button></div></div>
+      <div class="f"><span class="lab">Detail</span><div class="step"><button data-p="detail" data-d="-1" aria-label="Less detail">&#8722;</button><span class="val" id="detailOut"></span><button data-p="detail" data-d="1" aria-label="More detail">+</button></div></div>
+      <div class="f"><span class="lab">Direction</span><div class="seg two"><button id="axisAround" class="on">Around</button><button id="axisAcross">Across</button></div></div>
+      <div class="f"><span class="lab">Beat split</span><div class="seg two"><button id="splitSec" class="on">Sections</button><button id="splitRows">Rows</button></div></div>
+    </section>
+    <section class="grp"><h3>Demo across the crowd</h3>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><select id="demoSel" aria-label="Rainbow Run animation to run across the crowd"></select></div>
+    </section>
+    <section class="grp"><h3>Card stunt</h3>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><div class="line"><input type="text" id="stuntText" maxlength="24" placeholder="text for the stands" aria-label="Text for the stands"><button id="stuntGo" class="go">Show text</button></div></div>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><button id="picPick">Card stunt from a picture</button><input type="file" id="picFile" accept="image/*" hidden></div>
+    </section>
+    <section class="grp"><h3>Every screen</h3>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><button id="screenPick">Send a picture to every screen</button><input type="file" id="screenFile" accept="image/*" hidden></div>
+      <div class="f"><span class="lab">Fit</span><div class="seg two"><button id="fitWhole" class="on">Whole picture</button><button id="fitFill">Fill screen</button></div></div>
+    </section>
+    <section class="grp"><h3>Video</h3>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><select id="vidSel" aria-label="Video saved with the show"><option value="">Pick a saved video, or use a link</option></select></div>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><input type="url" id="vidUrl" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="https link to an mp4 file" aria-label="Video link"></div>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><div class="seg three"><button id="vidLoop">Loop off</button><button id="vidSound">Sound on</button><button id="vidStunt">Whole video</button></div></div>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><button class="go big" id="vidGo">Play video</button></div>
+    </section>
+    <section class="grp"><h3>Band loop</h3>
+      <div class="f"><span class="lab">Loop</span><div class="line"><span class="val left" id="bandOut">stopped</span><button id="bandGo" style="width:90px">Start</button></div></div>
+    </section>
   </div>
 
   <div class="pane" id="pane-layout" hidden>
-    <div class="row"><span class="lab">Preset</span><button data-preset="arena">Arena</button><button data-preset="theater">Theater</button><button data-preset="bowl">Bowl</button><button data-preset="field">Field</button></div>
-    <div class="row"><span class="lab">Section</span><span id="secList"></span></div>
-    <div class="row"><span class="lab">Add</span><button id="addBlock">Straight</button><button id="addArc">Curved</button><button id="delSec">Remove</button></div>
-    <div class="row"><span class="lab">Move</span><button data-k="x" data-d="-0.5">&#9664;</button><button data-k="x" data-d="0.5">&#9654;</button><button data-k="y" data-d="-0.5">&#9650;</button><button data-k="y" data-d="0.5">&#9660;</button><span class="val" id="posOut"></span></div>
-    <div class="row" data-for="block"><span class="lab">Turn</span><button data-k="rot" data-d="-2">&#8722;</button><span class="val" id="rotOut"></span><button data-k="rot" data-d="2">+</button></div>
-    <div class="row" data-for="arc"><span class="lab">Radius</span><button data-k="r" data-d="-0.5">&#8722;</button><span class="val" id="rOut"></span><button data-k="r" data-d="0.5">+</button></div>
-    <div class="row" data-for="arc"><span class="lab">Start angle</span><button data-k="a0" data-d="-1">&#8722;</button><span class="val" id="a0Out"></span><button data-k="a0" data-d="1">+</button></div>
-    <div class="row" data-for="arc"><span class="lab">Reach</span><button data-k="span" data-d="-1">&#8722;</button><span class="val" id="spanOut"></span><button data-k="span" data-d="1">+</button></div>
-    <div class="row"><span class="lab">Rows</span><button data-k="rows" data-d="-1">&#8722;</button><span class="val" id="rowsOut"></span><button data-k="rows" data-d="1">+</button></div>
-    <div class="row"><span class="lab">Front row</span><button data-k="seats" data-d="-1">&#8722;</button><span class="val" id="seatsOut"></span><button data-k="seats" data-d="1">+</button></div>
-    <div class="row"><span class="lab">Row adds</span><button data-k="grow" data-d="-1">&#8722;</button><span class="val" id="growOut"></span><button data-k="grow" data-d="1">+</button></div>
-    <div class="row" data-for="block"><span class="lab">Seat gap</span><button data-k="seatGap" data-d="-0.05">&#8722;</button><span class="val" id="seatGapOut"></span><button data-k="seatGap" data-d="0.05">+</button></div>
-    <div class="row"><span class="lab">Row gap</span><button data-k="rowGap" data-d="-0.05">&#8722;</button><span class="val" id="rowGapOut"></span><button data-k="rowGap" data-d="0.05">+</button></div>
-    <div class="row"><span class="lab">Seat grid</span><button id="gridOpen">Edit rows and seats</button></div>
+    <section class="grp"><h3>Venue</h3>
+      <div class="seg four"><button data-preset="arena">Arena</button><button data-preset="theater">Theater</button><button data-preset="bowl">Bowl</button><button data-preset="field">Field</button></div>
+      <div style="height:8px"></div>
+    </section>
+    <section class="grp"><h3>Sections</h3>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><div id="secList"></div></div>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><div class="seg three"><button id="addBlock">Add straight</button><button id="addArc">Add curved</button><button id="delSec">Remove</button></div></div>
+    </section>
+    <section class="grp"><h3>Selected section</h3>
+      <div class="f"><span class="lab">Move</span><div><div class="seg four"><button data-k="x" data-d="-0.5" aria-label="Move left">&#9664;</button><button data-k="x" data-d="0.5" aria-label="Move right">&#9654;</button><button data-k="y" data-d="-0.5" aria-label="Move up">&#9650;</button><button data-k="y" data-d="0.5" aria-label="Move down">&#9660;</button></div><div class="val" id="posOut" style="margin-top:4px"></div></div></div>
+<div id="kindBox">
+      <div class="f" data-for="block"><span class="lab">Turn</span><div class="step"><button data-k="rot" data-d="-2">&#8722;</button><span class="val" id="rotOut"></span><button data-k="rot" data-d="2">+</button></div></div>
+      <div class="f" data-for="block"><span class="lab">Seat gap</span><div class="step"><button data-k="seatGap" data-d="-0.05">&#8722;</button><span class="val" id="seatGapOut"></span><button data-k="seatGap" data-d="0.05">+</button></div></div>
+      <div class="f" data-for="arc"><span class="lab">Radius</span><div class="step"><button data-k="r" data-d="-0.5">&#8722;</button><span class="val" id="rOut"></span><button data-k="r" data-d="0.5">+</button></div></div>
+      <div class="f" data-for="arc"><span class="lab">Start angle</span><div class="step"><button data-k="a0" data-d="-1">&#8722;</button><span class="val" id="a0Out"></span><button data-k="a0" data-d="1">+</button></div></div>
+      <div class="f" data-for="arc"><span class="lab">Reach</span><div class="step"><button data-k="span" data-d="-1">&#8722;</button><span class="val" id="spanOut"></span><button data-k="span" data-d="1">+</button></div></div>
+      </div>
+      <div class="f"><span class="lab">Rows</span><div class="step"><button data-k="rows" data-d="-1">&#8722;</button><span class="val" id="rowsOut"></span><button data-k="rows" data-d="1">+</button></div></div>
+      <div class="f"><span class="lab">Front row</span><div class="step"><button data-k="seats" data-d="-1">&#8722;</button><span class="val" id="seatsOut"></span><button data-k="seats" data-d="1">+</button></div></div>
+      <div class="f"><span class="lab">Row adds</span><div class="step"><button data-k="grow" data-d="-1">&#8722;</button><span class="val" id="growOut"></span><button data-k="grow" data-d="1">+</button></div></div>
+      <div class="f"><span class="lab">Row gap</span><div class="step"><button data-k="rowGap" data-d="-0.05">&#8722;</button><span class="val" id="rowGapOut"></span><button data-k="rowGap" data-d="0.05">+</button></div></div>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><button id="gridOpen" class="big">Edit rows and seats</button></div>
+    </section>
   </div>
 
   <div class="pane" id="pane-sound" hidden>
-    <div class="row"><span class="lab">Path</span><button data-path="across" class="on">Across</button><button data-path="front">Front to back</button><button data-path="diagonal">Diagonal</button><button data-path="around">Around</button></div>
-    <div class="row"><span class="lab">Sound</span><button data-tone="siren" class="on">Siren</button><button data-tone="engine">Engine</button><button data-tone="tone">Tone</button></div>
-    <div class="row"><span class="lab">Speed</span><button data-s="speed" data-d="-5">&#8722;</button><span class="val" id="sSpeedOut"></span><button data-s="speed" data-d="5">+</button></div>
-    <div class="row"><span class="lab">Pitch</span><button data-s="f0" data-d="-20">&#8722;</button><span class="val" id="sF0Out"></span><button data-s="f0" data-d="20">+</button></div>
-    <div class="row"><span class="lab">Level</span><button data-s="level" data-d="-0.1">&#8722;</button><span class="val" id="sLevelOut"></span><button data-s="level" data-d="0.1">+</button></div>
-    <div class="row"><span class="lab">This screen</span><button id="hearHost">Listen here off</button></div>
-    <div class="row"><span class="lab">Timing beacon</span><button id="beaconGo">Beacon off</button><button id="spkStage" class="on">Speakers at stage</button><button id="spkMid">Speakers in middle</button></div>
-    <div class="row"><span class="lab">Room timing</span><span class="val" id="beaconOut" style="text-align:left;flex:1">beacon off</span></div>
-    <div class="row"><button class="go" id="launch">Launch flyby</button><span class="val" id="durOut"></span></div>
+    <section class="grp"><h3>Flyby</h3>
+      <div class="f stack"><span class="lab">Path</span><div class="seg four" style="grid-template-columns:repeat(2,minmax(0,1fr))"><button data-path="across" class="on">Across</button><button data-path="front">Front to back</button><button data-path="diagonal">Diagonal</button><button data-path="around">Around</button></div></div>
+      <div class="f"><span class="lab">Sound</span><div class="seg three"><button data-tone="siren" class="on">Siren</button><button data-tone="engine">Engine</button><button data-tone="tone">Tone</button></div></div>
+      <div class="f"><span class="lab">Speed</span><div class="step"><button data-s="speed" data-d="-5">&#8722;</button><span class="val" id="sSpeedOut"></span><button data-s="speed" data-d="5">+</button></div></div>
+      <div class="f"><span class="lab">Pitch</span><div class="step"><button data-s="f0" data-d="-20">&#8722;</button><span class="val" id="sF0Out"></span><button data-s="f0" data-d="20">+</button></div></div>
+      <div class="f"><span class="lab">Level</span><div class="step"><button data-s="level" data-d="-0.1">&#8722;</button><span class="val" id="sLevelOut"></span><button data-s="level" data-d="0.1">+</button></div></div>
+      <div class="f"><span class="lab">This screen</span><button id="hearHost">Listen here off</button></div>
+      <div class="f"><span class="lab">Length</span><span class="val left" id="durOut"></span></div>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><button class="go big" id="launch">Launch flyby</button></div>
+    </section>
+    <section class="grp"><h3>Timing beacon</h3>
+      <p>Plug this phone into the venue speakers. Seat phones hear the chirp and line their clocks up on it.</p>
+      <div class="f"><span class="lab">Beacon</span><button id="beaconGo">Beacon off</button></div>
+      <div class="f"><span class="lab">Speakers</span><div class="seg two"><button id="spkStage" class="on">At the stage</button><button id="spkMid">In the middle</button></div></div>
+      <div class="f"><span class="lab">Room timing</span><span class="val left" id="beaconOut" style="min-height:2.6em">beacon off</span></div>
+    </section>
   </div>
 
   <div class="pane" id="pane-plan" hidden>
-    <div class="row"><span class="lab">Guests</span><button data-g="-10">&#8722;10</button><button data-g="-1">&#8722;</button><span class="val" id="guestsOut"></span><button data-g="1">+</button><button data-g="10">+10</button></div>
-    <div class="row"><span class="lab">Fill</span><button data-fill="pack">Pack front</button><button data-fill="center">Pack middle</button><button data-fill="scatter">Scatter</button><button data-fill="checker">Checker</button><button data-fill="shape">Shape</button></div>
-    <div class="row"><span class="lab">Shape</span><button data-shape="heart">Heart</button><button data-shape="star">Star</button><button data-shape="circle">Circle</button><button data-shape="ring">Ring</button><button data-shape="diamond">Diamond</button><button data-shape="cross">Cross</button><button data-shape="text">Text</button></div>
-    <div class="row"><span class="lab">Shape text</span><input type="text" id="shapeText" maxlength="12" placeholder="letters to seat" aria-label="Letters to seat guests in"></div>
-    <div class="row"><span class="lab">Show fits</span><button id="fitVenue">Whole venue</button><button id="fitGuests">Guests only</button></div>
-    <div class="row"><span class="lab">Simulate</span><input type="range" id="simIn" min="0" max="0" value="0" style="flex:1;min-width:0" aria-label="Guests to simulate"><span class="val" id="simOut"></span></div>
-    <div class="row"><span class="lab">Door</span><button class="go" id="nextGuest">Next guest</button><button id="undoGuest">Undo last</button><button id="clearGuests">Clear seating</button></div>
-    <div class="row"><span class="lab">Seated</span><span class="val" id="seatedOut"></span></div>
+    <section class="grp"><h3>Guests</h3>
+      <div class="f stack"><span class="lab">Expected</span><div class="step wide"><button data-g="-10">&#8722;10</button><button data-g="-1">&#8722;</button><span class="val" id="guestsOut"></span><button data-g="1">+</button><button data-g="10">+10</button></div></div>
+      <div class="f stack"><span class="lab">Fill</span><div class="seg roomy"><button data-fill="pack">Pack front</button><button data-fill="center">Pack middle</button><button data-fill="scatter">Scatter</button><button data-fill="checker">Checker</button><button data-fill="shape">Shape</button></div></div>
+      <div class="f stack"><span class="lab">Shape</span><div class="seg roomy"><button data-shape="heart">Heart</button><button data-shape="star">Star</button><button data-shape="circle">Circle</button><button data-shape="ring">Ring</button><button data-shape="diamond">Diamond</button><button data-shape="cross">Cross</button><button data-shape="text">Text</button></div></div>
+      <div class="f"><span class="lab">Shape text</span><input type="text" id="shapeText" maxlength="12" placeholder="letters to seat" aria-label="Letters to seat guests in"></div>
+      <div class="f"><span class="lab">Show fits</span><div class="seg two"><button id="fitVenue">Whole venue</button><button id="fitGuests">Guests only</button></div></div>
+    </section>
+    <section class="grp"><h3>Simulate</h3>
+      <div class="f"><span class="lab">Guests in</span><div class="line"><input type="range" id="simIn" min="0" max="0" value="0" aria-label="Guests to simulate"><span class="val" id="simOut" style="width:6.5em"></span></div></div>
+    </section>
+    <section class="grp"><h3>Door</h3>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><button class="go big" id="nextGuest">Next guest</button></div>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><div class="seg two"><button id="undoGuest">Undo last</button><button id="clearGuests">Clear seating</button></div></div>
+      <div class="f"><span class="lab">Seated</span><span class="val left" id="seatedOut"></span></div>
+    </section>
   </div>
 
   <div class="pane" id="pane-seats" hidden>
-    <div id="seatRows"></div>
-    <div class="row"><span class="lab">Signed in</span><span class="val" id="whoOut"></span><button id="signOut">Sign out</button></div>
-    <div id="hostBox" hidden>
-      <p class="lab">Hosts you let run this show</p>
+    <section class="grp"><h3>Seat codes by section</h3>
+      <div id="seatRows"></div>
+    </section>
+  </div>
+
+  <div class="pane" id="pane-access" hidden>
+    <section class="grp"><h3>Signed in</h3>
+      <div class="f"><span class="lab">Account</span><span class="val left" id="whoOut"></span></div>
+      <div class="f"><span class="lab">Room</span><span class="val left" id="roomOut"></span></div>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><div class="seg two"><button id="switchRoom">Change room</button><button id="signOut">Sign out</button></div></div>
+    </section>
+    <section class="grp" id="hostBox" hidden><h3>Hosts</h3>
+      <p id="hostScope"></p>
       <div id="hostList"></div>
-      <div class="row"><input type="email" id="hostIn" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="their email" aria-label="Host email"><button id="hostAdd">Add host</button></div>
-    </div>
+      <div class="line" style="margin:8px 0"><input type="email" id="hostIn" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="their email" aria-label="Host email"><button id="hostAdd" class="go">Add host</button></div>
+      <div class="f" id="releaseRow" style="grid-template-columns:minmax(0,1fr)" hidden><button id="releaseGo">Free this room from its own Supabase</button></div>
+    </section>
+    <section class="grp"><h3>Your own Supabase</h3>
+      <p>A host without an account on this show's Supabase can bring their own. Make a free project at supabase.com, open the project's settings, and copy the Project URL and the anon public key. Sign in with them on the Own Supabase tab. The first sign in claims the room for that Supabase, and from then on only its accounts host that room. Add other hosts here by email after they make an account on it.</p>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><button id="ownOpen" class="go big">Sign in with my own Supabase</button></div>
+    </section>
   </div>
 </div>
 
 <div class="over" id="unlock">
   <div class="card">
     <h2>Stadium Host</h2>
-    <p id="unlockHelp">Type the room code for the show and sign in with a host email.</p>
     <input type="text" id="roomIn" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="room code" aria-label="Room code">
+    <div class="seg three" id="uTabs">
+      <button data-u="in" class="on">Sign in</button><button data-u="new">New account</button><button data-u="own">Own Supabase</button>
+    </div>
+    <p id="unlockHelp"></p>
+    <div id="ownBox" hidden>
+      <input type="url" id="ownUrl" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="https://xxxxxxxx.supabase.co" aria-label="Supabase project URL">
+      <input type="text" id="ownKey" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="anon public key" aria-label="Supabase anon public key">
+    </div>
     <div id="loginBox">
       <input type="email" id="emailIn" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="email" aria-label="Email">
       <input type="password" id="passIn" autocomplete="current-password" placeholder="password" aria-label="Password">
     </div>
     <input type="password" id="codeIn" autocomplete="off" placeholder="host code" aria-label="Host code" hidden>
-    <button class="go" id="unlockGo">Sign in</button>
-    <button id="signUp">Create account</button>
+    <div class="seg two" id="uBtns"><button class="go" id="unlockGo">Sign in</button><button id="signUp">Create account</button></div>
     <p id="unlockMsg"></p>
   </div>
 </div>
@@ -184,14 +281,13 @@ input[type=color]{width:44px;height:38px;border:1px solid var(--line);border-rad
     <div id="doorSeat" style="font-size:2.2rem;font-weight:800">&nbsp;</div>
     <p id="doorWhere">&nbsp;</p>
     <div id="doorQr" style="width:100%;max-width:260px;margin:0 auto 12px;aspect-ratio:1"></div>
-    <button class="go" id="doorNext">Next guest</button>
-    <button id="doorDone">Done</button>
+    <div class="seg two"><button class="go" id="doorNext">Next guest</button><button id="doorDone">Done</button></div>
   </div>
 </div>
 
 <div id="gridEd" class="over" hidden style="align-items:stretch;padding:0;background:#fff">
-  <div style="display:grid;grid-template-rows:auto auto minmax(0,1fr);width:100%;height:100%">
-    <div class="row" style="padding:12px 16px 0;margin:0"><button class="go" id="gridClose">Done</button><b id="gridTitle"></b></div>
+  <div style="display:grid;grid-template-rows:auto auto minmax(0,1fr);width:100%;height:100%;max-width:900px;margin:0 auto">
+    <div class="line" style="padding:12px 16px 0;grid-template-columns:100px minmax(0,1fr)"><button class="go" id="gridClose">Done</button><b id="gridTitle" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></b></div>
     <p style="margin:6px 16px 8px;color:var(--soft);font-size:.8rem">Minus and plus set how many seats a row has. Tap a seat to switch it off for a broken seat or an aisle, tap again to bring it back.</p>
     <div id="gridRows" style="overflow:auto;padding:0 16px 24px"></div>
   </div>
@@ -239,17 +335,17 @@ function connect(){
   s.onmessage=e=>{if(sock!==s)return;let m;try{m=JSON.parse(e.data)}catch(_){return}if(!m||m.app!==APP)return;onMsg(m)};
   s.onerror=()=>s.close();
   s.onclose=e=>{if(sock!==s)return;sock=null;live=false;host=false;clock.stop();renderConn();
-    if(e.reason==="too many host code tries"){$("unlock").hidden=false;$("unlockMsg").textContent="Too many wrong host codes. Check the code and unlock again.";return}
+    if(e.reason==="too many host code tries"){setUTab("in");$("unlock").hidden=false;$("unlockMsg").textContent="Too many wrong host codes. Check the code and unlock again.";return}
     retryTimer=setTimeout(connect,Math.min(15000,500*Math.pow(2,retry++)))};
 }
 function onMsg(m){
   if(m.type==="pong"){clock.pong(m);return}
   if(m.type==="loop"){loop=m.state||null;renderBand();return}
   if(m.type==="stadium-host"){
-    if(m.ok){host=true;owner=!!m.owner;$("unlock").hidden=true;keep(APP+"-host-room",room);if(!auth)keep(APP+"-host-code",code);if(m.reason)say(m.reason);beat()}
+    if(m.ok){host=true;owner=!!m.owner;via=m.via||via;$("unlock").hidden=true;$("unlockMsg").textContent="";keep(APP+"-host-room",room);if(mode==="code")keep(APP+"-host-code",code);if(m.reason)say(m.reason);beat()}
     else{host=false;$("unlock").hidden=false;$("unlockMsg").textContent=m.reason||"Not unlocked."}
     renderWho();renderConn();return}
-  if(m.type==="stadium-hosts"){owners=m.owners||[];hosts=m.hosts||[];renderHosts();return}
+  if(m.type==="stadium-hosts"){owners=m.owners||[];hosts=m.hosts||[];scope=m.scope||"server";claim=m.claim||null;renderHosts();return}
   if(m.type==="stadium-layout"){if(m.layout&&!pendingLayout){layout=m.layout;rebuild()}else if(!m.layout&&!layout)say("No seat layout yet. Pick one in the Layout tab.");return}
   if(m.type==="stadium-cue"){cue=m.cue;renderShow();return}
   if(m.type==="stadium-plan"){if(m.plan){plan=Object.assign(plan,m.plan)}planDirty=true;renderPlan();return}
@@ -258,76 +354,128 @@ function onMsg(m){
   if(m.type==="stadium-beacon"){beaconOn=!!(m.beacon&&m.beacon.on);renderBeacon();return}
   if(m.type==="stadium-count"){phones=m.phones|0;filled=new Set(m.seats||[]);renderCount();renderSeats();return}
 }
-function renderConn(){$("conn").textContent=!live?"not connected":host?"host, room "+room:"unlocking"}
+function renderConn(){$("conn").textContent=!live?"not connected":host?"room "+room:"unlocking";$("conn").classList.toggle("ok",live&&host)}
 function renderCount(){let n=0;all.forEach(s=>{if(filled.has(s.id))n++});$("count").textContent=phones?phones+(phones===1?" phone, ":" phones, ")+n+" seats filled":"no seats in"}
 function beat(){if(host&&document.visibilityState==="visible")send({type:"beat"})}
 setInterval(beat,10000);
 
 /* ---------- sign in ----------
-   BLUE PHONE: the band server hands out the public Supabase address and key. With them the host signs in with
-   email and password, and the server checks the sign in against its host list. Without them the server is
-   still on the old host code, and the code box shows instead. */
-let auth=null,owner=false,owners=[],hosts=[],sentToken="";
+   BLUE PHONE: three ways in. Sign in and New account use the show's own Supabase, which the band server hands
+   out. Own Supabase is for a host who brings their own: they paste its address and public key, and their first
+   sign in claims the room for it. While the server has no Supabase it may still take the old host code. */
+let mode="server",cfg={server:null,code:false,room:null},serverAuth=null,ownAuth=null,owner=false,owners=[],hosts=[],scope="server",claim=null,via="",sentToken="",uTab="in";
 const LOGIN_URL=SYNC_URL.replace(/^ws/,"http")+"/stadium-login";
-function sendLogin(){
-  if(auth){const t=auth.token;if(t){sentToken=t;send({type:"stadium-host",token:t})}else{$("unlock").hidden=false;$("unlockMsg").textContent="Sign in to host."}}
-  else send({type:"stadium-host",code:code});
-}
-function useLogin(cfg){
-  if(cfg&&cfg.url&&cfg.key){
-    auth=createAuth({app:APP+"-host",url:cfg.url,key:cfg.key,onChange:()=>{
-      /* a refreshed token goes to the server so the host keeps control past the hour */
-      const t=auth.token;if(t&&t!==sentToken&&live)sendLogin();
-      if(!t&&host){host=false;$("unlock").hidden=false;renderConn()}
-      renderWho()}});
-    $("loginBox").hidden=false;$("codeIn").hidden=true;$("signUp").hidden=false;$("unlockGo").textContent="Sign in";
-    $("unlockHelp").textContent="Type the room code for the show and sign in with a host email.";
-    if(auth.email)$("emailIn").value=auth.email;
-  }else{
-    auth=null;$("loginBox").hidden=true;$("codeIn").hidden=false;$("signUp").hidden=true;$("unlockGo").textContent="Unlock";
-    $("unlockHelp").textContent="Type the room code for the show and the host code from the band server.";
-    $("codeIn").value=keep(APP+"-host-code")||"";
-  }
+const OWN_URL_RE=/^https:\/\/[a-z0-9]{6,40}\.supabase\.co$/,OWN_KEY_RE=/^[A-Za-z0-9._-]{20,1200}$/;
+function ownCfg(){try{return JSON.parse(keep(APP+"-host-own")||"null")}catch(e){return null}}
+function onAuthChange(a){
+  /* a refreshed token goes to the server so the host keeps control past the hour */
+  if(a!==activeAuth())return;
+  const t=a.token;if(t&&t!==sentToken&&live)sendLogin();
+  if(!t&&host){host=false;$("unlock").hidden=false;renderConn()}
   renderWho();
-  if(room&&(auth?auth.token:keep(APP+"-host-code"))){if(!auth)code=keep(APP+"-host-code");connect()}
 }
-function renderWho(){
-  $("whoOut").textContent=auth?(auth.email||"not signed in")+(owner?", owner":host?", host":""):"host code";
-  $("signOut").hidden=!auth;renderHosts();
+function makeServerAuth(){
+  if(!cfg.server){serverAuth=null;return}
+  if(serverAuth&&serverAuth.url===cfg.server.url)return;
+  const a=createAuth({app:APP+"-host",url:cfg.server.url,key:cfg.server.key,onChange:()=>onAuthChange(a)});a.url=cfg.server.url;serverAuth=a;
 }
-function renderHosts(){
-  $("hostBox").hidden=!(auth&&host&&owner);
-  const box=$("hostList");box.innerHTML="";
-  owners.forEach(e=>{const r=document.createElement("div");r.className="row";const l=document.createElement("span");l.className="val";l.textContent=e+", owner";r.appendChild(l);box.appendChild(r)});
-  hosts.forEach(e=>{const r=document.createElement("div");r.className="row";const l=document.createElement("span");l.className="val";l.textContent=e;
-    const b=document.createElement("button");b.textContent="Remove";b.addEventListener("click",()=>send({type:"stadium-hosts",action:"remove",email:e}));
-    r.appendChild(l);r.appendChild(b);box.appendChild(r)});
+function makeOwnAuth(c){
+  if(!c||!OWN_URL_RE.test(c.url)||!OWN_KEY_RE.test(c.key)){ownAuth=null;return null}
+  if(ownAuth&&ownAuth.url===c.url&&ownAuth.key===c.key)return ownAuth;
+  /* each Supabase keeps its own sign in on the phone */
+  const a=createAuth({app:APP+"-host-own-"+c.url.replace(/[^a-z0-9]/g,"").slice(8,40),url:c.url,key:c.key,onChange:()=>onAuthChange(a)});a.url=c.url;a.key=c.key;ownAuth=a;return a;
 }
-$("hostAdd").addEventListener("click",()=>{const e=$("hostIn").value.trim().toLowerCase();if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)){$("hostIn").focus();return}send({type:"stadium-hosts",action:"add",email:e});$("hostIn").value=""});
-$("signOut").addEventListener("click",()=>{if(!auth)return;auth.signOut();host=false;owner=false;if(sock){const o=sock;sock=null;o.close()}live=false;$("unlock").hidden=false;$("unlockMsg").textContent="Signed out.";renderConn();renderWho()});
-
-$("roomIn").value=room;
-async function unlock(create){
+function activeAuth(){return mode==="own"?ownAuth:mode==="server"?serverAuth:null}
+function sendLogin(){
+  if(mode==="code"){send({type:"stadium-host",code:code});return}
+  const a=activeAuth(),t=a&&a.token;
+  if(!t){$("unlock").hidden=false;$("unlockMsg").textContent="Sign in to host.";return}
+  sentToken=t;
+  send(mode==="own"?{type:"stadium-host",token:t,own:{url:a.url,key:a.key}}:{type:"stadium-host",token:t});
+}
+async function loadCfg(r){
+  let c=null;try{c=JSON.parse(keep(APP+"-host-login:"+r)||keep(APP+"-host-login")||"null")}catch(e){}
+  try{const x=await fetch(LOGIN_URL+"?room="+encodeURIComponent(r||""),{cache:"no-store"});if(x.ok){c=await x.json();keep(APP+"-host-login:"+r,JSON.stringify(c))}}catch(e){}
+  cfg=Object.assign({server:null,code:false,room:null},c&&typeof c==="object"&&!c.url?c:{server:c&&c.url?{url:c.url,key:c.key}:null});
+  makeServerAuth();
+}
+/* the unlock card: one tab per way in, and the card stays put while tabs change */
+function setUTab(t){
+  uTab=t;document.querySelectorAll("[data-u]").forEach(b=>b.classList.toggle("on",b.dataset.u===t));
+  const own=t==="own",useCode=t==="in"&&!cfg.server&&cfg.code;
+  $("ownBox").hidden=!own;$("loginBox").hidden=useCode;$("codeIn").hidden=!useCode;
+  $("unlockGo").textContent=useCode?"Unlock":t==="new"?"Create account":"Sign in";
+  $("signUp").textContent=own?"Create account":"Sign in instead";
+  $("signUp").hidden=!own;
+  $("passIn").autocomplete=t==="new"?"new-password":"current-password";
+  if(own){const c=cfg.room||ownCfg();if(c){if(!$("ownUrl").value)$("ownUrl").value=c.url;if(!$("ownKey").value&&c.key)$("ownKey").value=c.key}}
+  $("unlockHelp").textContent=own?(cfg.room?"This room signs in with its own Supabase. Sign in with an account on it.":"Paste your Supabase Project URL and anon public key. Your first sign in claims this room for your Supabase.")
+    :t==="new"?(cfg.server?"Makes an account on this show's Supabase. Open the confirm link it emails you, then ask the show's owner to add your email in the Access tab.":"This show has no Supabase of its own. Use the Own Supabase tab.")
+    :useCode?"Type the host code from the band server.":cfg.server?"Sign in with an email on this show's host list.":"This show has no Supabase of its own. Use the Own Supabase tab.";
+  const a=own?null:serverAuth;if(a&&a.email&&!$("emailIn").value)$("emailIn").value=a.email;
+}
+document.querySelectorAll("[data-u]").forEach(b=>b.addEventListener("click",()=>{setUTab(b.dataset.u);$("unlockMsg").textContent=""}));
+async function unlock(second){
   const r=cleanRoom($("roomIn").value);if(!r){$("roomIn").focus();return}
-  room=r;keep(APP+"-host-room",room);
-  if(!auth){const c=$("codeIn").value.trim();if(!c){$("codeIn").focus();return}code=c;$("unlockMsg").textContent="Unlocking";connect();return}
-  const e=$("emailIn").value.trim(),p=$("passIn").value;
-  if(!e){$("emailIn").focus();return}if(!p){$("passIn").focus();return}
+  if(r!==room||!cfg.loadedFor||cfg.loadedFor!==r){room=r;keep(APP+"-host-room",room);await loadCfg(room);cfg.loadedFor=r}
+  const t=uTab;
+  if(t==="in"&&!cfg.server&&cfg.code){const c=$("codeIn").value.trim();if(!c){$("codeIn").focus();return}code=c;mode="code";keep(APP+"-host-mode",mode);$("unlockMsg").textContent="Unlocking";connect();return}
+  let a;
+  if(t==="own"){
+    const url=$("ownUrl").value.trim().toLowerCase().replace(/\/+$/,""),key=$("ownKey").value.trim();
+    if(!OWN_URL_RE.test(url)){$("ownUrl").focus();$("unlockMsg").textContent="The Project URL looks like https, then the project id, then .supabase.co";return}
+    if(!OWN_KEY_RE.test(key)){$("ownKey").focus();$("unlockMsg").textContent="Paste the anon public key from the project's settings.";return}
+    keep(APP+"-host-own",JSON.stringify({url:url,key:key}));a=makeOwnAuth({url:url,key:key});mode="own";
+  }else{
+    if(!serverAuth){setUTab("own");$("unlockMsg").textContent="This show has no Supabase of its own. Use your own.";return}
+    a=serverAuth;mode="server";
+  }
+  keep(APP+"-host-mode",mode);
+  const e=$("emailIn").value.trim(),p=$("passIn").value,create=t==="new"||(t==="own"&&second);
+  if(!e){$("emailIn").focus();return}
+  /* already signed in as that email: just ask the server again, for when the owner has just added it */
+  if(!create&&!p&&a.token&&a.email.toLowerCase()===e.toLowerCase()){$("unlockMsg").textContent="Unlocking";if(live)sendLogin();else connect();return}
+  if(!p){$("passIn").focus();return}
   $("unlockMsg").textContent=create?"Creating account":"Signing in";
   try{
-    if(create){if(await auth.signUp(e,p)==="confirm"){$("unlockMsg").textContent="Check your email and open the confirm link, then sign in here.";return}}
-    else await auth.signIn(e,p);
+    if(create){if(await a.signUp(e,p)==="confirm"){$("unlockMsg").textContent="Check your email and open the confirm link, then sign in here.";setUTab(t==="new"?"in":t);return}}
+    else await a.signIn(e,p);
   }catch(err){$("unlockMsg").textContent=err.message||"Sign in failed.";return}
   $("passIn").value="";$("unlockMsg").textContent="Unlocking";
   if(live)sendLogin();else connect();
 }
 $("unlockGo").addEventListener("click",()=>unlock(false));
-$("signUp").addEventListener("click",()=>unlock(true));
+$("signUp").addEventListener("click",()=>{if(uTab==="own")unlock(true)});
+$("roomIn").value=room;
+
+/* ---------- access tab ---------- */
+function renderWho(){
+  const a=activeAuth();
+  $("whoOut").textContent=mode==="code"?"host code":(a&&a.email?a.email:"not signed in")+(host?(owner?", owner":", host"):"");
+  $("roomOut").textContent=(room||"none")+(mode==="own"&&ownAuth?", own Supabase "+ownAuth.url.replace(/^https:\/\//,""):mode==="server"?", this show's Supabase":"");
+  $("signOut").disabled=mode==="code"&&!host;renderHosts();
+}
+function renderHosts(){
+  $("hostBox").hidden=!(host&&owner);
+  $("hostScope").textContent=scope==="room"?"These emails can host room "+room+" through your own Supabase. Each one makes an account on it first.":"These emails can host any room through this show's Supabase. Each one makes an account on the New account tab first.";
+  const box=$("hostList");box.textContent="";
+  const add=(e,isOwner)=>{const r=document.createElement("div");r.className="hrow";const l=document.createElement("span");l.textContent=e+(isOwner?", owner":"");r.appendChild(l);
+    if(!isOwner){const b=document.createElement("button");b.textContent="Remove";b.addEventListener("click",()=>send({type:"stadium-hosts",action:"remove",email:e}));r.appendChild(b)}else r.appendChild(document.createElement("span"));box.appendChild(r)};
+  owners.forEach(e=>add(e,true));hosts.forEach(e=>add(e,false));
+  $("releaseRow").hidden=!claim;
+}
+$("hostAdd").addEventListener("click",()=>{const e=$("hostIn").value.trim().toLowerCase();if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)){$("hostIn").focus();return}send({type:"stadium-hosts",action:"add",email:e});$("hostIn").value=""});
+let releaseArmed=0;
+$("releaseGo").addEventListener("click",()=>{if(Date.now()-releaseArmed>3000){releaseArmed=Date.now();say("Tap again to free this room. Its own Supabase hosts lose control.");return}releaseArmed=0;send({type:"stadium-hosts",action:"release"});say("Room freed.")});
+function leave(t){host=false;owner=false;if(sock){const o=sock;sock=null;o.close()}clearTimeout(retryTimer);live=false;$("unlock").hidden=false;$("unlockMsg").textContent=t||"";renderConn();renderWho()}
+$("signOut").addEventListener("click",()=>{const a=activeAuth();if(a)a.signOut();if(mode==="code")keep(APP+"-host-code","");leave("Signed out.")});
+$("switchRoom").addEventListener("click",()=>{leave("Type another room code.");$("roomIn").focus()});
+$("ownOpen").addEventListener("click",()=>{leave("");setUTab("own")});
 
 /* ---------- tabs ---------- */
 document.querySelectorAll("#tabs button").forEach(b=>b.addEventListener("click",()=>{
   document.querySelectorAll("#tabs button").forEach(x=>x.classList.toggle("on",x===b));
-  ["show","layout","sound","plan","seats"].forEach(t=>$("pane-"+t).hidden=t!==b.dataset.tab);
+  ["show","layout","sound","plan","seats","access"].forEach(t=>$("pane-"+t).hidden=t!==b.dataset.tab);
   planView=b.dataset.tab==="plan";
 }));
 
@@ -346,7 +494,7 @@ function renderLayout(){
   if(!layout){["x","y","rot","r","a0","span","rows","seats","grow","seatGap","rowGap"].forEach(k=>{const o=$(k+"Out");if(o)o.textContent="none"});$("posOut").textContent="none";return}
   layout.sections.forEach((s,i)=>{const b=document.createElement("button");b.textContent=s.id;b.classList.toggle("on",i===sel);b.addEventListener("click",()=>{sel=i;renderLayout()});box.appendChild(b)});
   const s=layout.sections[sel];if(!s)return;
-  document.querySelectorAll("[data-for]").forEach(r=>r.style.visibility=r.dataset.for===s.kind?"visible":"hidden");
+  document.querySelectorAll("[data-for]").forEach(r=>r.hidden=r.dataset.for!==s.kind);
   ["rot","r","a0","span","rows","seats","grow","seatGap","rowGap"].forEach(k=>$(k+"Out").textContent=fmt(k,s[k]));
   $("posOut").textContent=fmt("x",s.x)+", "+fmt("y",s.y);
   say((layout.name||"Layout")+", "+STADIUM.count(layout)+" seats of "+STADIUM.MAX+" in "+layout.sections.length+" sections");
@@ -539,12 +687,12 @@ function playLocal(s,ear){
 /* ---------- seat codes ---------- */
 function renderSeats(){
   const box=$("seatRows");box.textContent="";
-  if(!layout){box.textContent="No layout yet.";return}
+  if(!layout){box.innerHTML='<p class="note">No layout yet. Pick a venue in the Layout tab.</p>';return}
   layout.sections.forEach(s=>{
     const list=all.filter(x=>x.sec===s.id),inn=list.filter(x=>filled.has(x.id)).length;
-    const r=document.createElement("div");r.className="row";
-    const l=document.createElement("span");l.className="lab";l.textContent="Section "+s.id;
-    const v=document.createElement("span");v.className="val";v.textContent=inn+" of "+list.length;
+    const r=document.createElement("div");r.className="srow";
+    const l=document.createElement("span");l.className="val left";l.textContent="Section "+s.id;
+    const v=document.createElement("span");v.className="val";v.textContent=inn+" of "+list.length+" in";
     const b=document.createElement("button");b.textContent="Seat codes";b.addEventListener("click",()=>printSection(s.id));
     r.append(l,v,b);box.appendChild(r);
   });
@@ -744,9 +892,13 @@ pv.addEventListener("click",e=>{
 renderShow();renderSound();renderLayout();renderSeats();renderBand();renderCount();renderPlan();draw();
 /* the sign in settings are kept on the phone too, so a jammed network still finds them */
 (async()=>{
-  let cfg=null;try{cfg=JSON.parse(keep(APP+"-host-login")||"null")}catch(e){}
-  try{const r=await fetch(LOGIN_URL,{cache:"no-store"});if(r.ok){cfg=await r.json();keep(APP+"-host-login",JSON.stringify(cfg))}}catch(e){}
-  useLogin(cfg);
+  await loadCfg(room);cfg.loadedFor=room;
+  const saved=keep(APP+"-host-mode");
+  mode=cfg.room?"own":saved==="own"&&ownCfg()?"own":cfg.server?"server":cfg.code?"code":"own";
+  if(mode==="own")makeOwnAuth(cfg.room||ownCfg());
+  setUTab(mode==="own"?"own":"in");renderWho();
+  const a=activeAuth();
+  if(room&&(mode==="code"?keep(APP+"-host-code"):a&&a.token)){if(mode==="code")code=keep(APP+"-host-code");connect()}
 })();
 window.RRHost={get layout(){return layout},get filled(){return filled},get phones(){return phones},get host(){return host}};
 })();
