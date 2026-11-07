@@ -154,7 +154,9 @@ canvas{z-index:1}
   <div class="row">
     <button id="sound">Sound off</button>
     <button id="full">Full screen</button>
+    <button id="mic">Microphone off</button>
   </div>
+  <p class="note" id="micNote">Microphone on makes the Spectral Engine scenes move to the sound this phone hears.</p>
   <p class="note" id="pace">Own pace, 100 bpm</p>
   </details>
   <p class="note">This panel fades after a few seconds. Tap the menu button to bring it back.</p>
@@ -639,6 +641,7 @@ function wallSync(t){
   const ox=(W-SW*sc)/2-cx*SW*sc,oy=(H-SH*sc)/2-cy*SH*sc+nudge*H;
   wallEl.style.transform="translate("+ox+"px,"+oy+"px) scale("+sc+")";wallEl._tx={ox:ox,oy:oy,sc:sc,w:cols*SW,h:rows*SH};
   /* the band beat for scenes that move to music, as a beat count at a time since the scene started */
+  try{const cw=wallEl.contentWindow;if(cw&&!cw.__mic)cw.__mic=micRead}catch(e){}
   try{const cw=wallEl.contentWindow,ep=cyc*PERIOD;if(cw&&!cw.__band){cw.__band=function(ms){return {active:bandOn(),beat:beatAt(ep+ms)}};cw.__room=function(){return {state:loopState,epoch:ep}}}}catch(e){}
   try{const cw=wallEl.contentWindow;if(cw&&cw.__tick){const st=cw.__tick(t-cyc*PERIOD);if(st==="live"&&!wallEl._shown){wallEl._shown=true;wallEl.style.opacity=1}}}catch(e){}
   return true;
@@ -713,11 +716,34 @@ function schedule(){
     nextStep++;
   }
 }
+/* ---------- microphone ----------
+   BLUE PHONE: the Spectral Engine scenes draw from the microphone while it is on, the way the original
+   Spectral Engine does, instead of from the band loop. Each phone listens for itself. */
+let micCtx=null,micAn=null,micStream=null;const micFreq=new Uint8Array(1024),micTime=new Uint8Array(1024);
+function micRead(){
+  if(!micAn)return null;
+  micAn.getByteFrequencyData(micFreq);micAn.getByteTimeDomainData(micTime);
+  return {freq:micFreq,time:micTime,rate:micCtx.sampleRate,fft:micAn.fftSize};
+}
+const micBtn=document.getElementById("mic");
+function renderMic(t){micBtn.textContent=micAn?"Microphone on":"Microphone off";micBtn.classList.toggle("on",!!micAn);
+  document.getElementById("soundName").textContent=(soundOn?"Sound on":"Sound off")+(micAn?", mic on":"");
+  document.getElementById("micNote").textContent=t||(micAn?"The Spectral Engine scenes now move to what this phone hears.":"Microphone on makes the Spectral Engine scenes move to the sound this phone hears.")}
+micBtn.addEventListener("click",async()=>{
+  if(micAn){try{micStream.getTracks().forEach(k=>k.stop())}catch(e){}try{micCtx.close()}catch(e){}micAn=null;micCtx=null;micStream=null;renderMic();return}
+  try{
+    micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    const AC=window.AudioContext||window.webkitAudioContext;micCtx=new AC();await micCtx.resume();
+    const an=micCtx.createAnalyser();an.fftSize=2048;an.smoothingTimeConstant=0.6;an.minDecibels=-90;an.maxDecibels=-25;
+    micCtx.createMediaStreamSource(micStream).connect(an);micAn=an;
+    renderMic();
+  }catch(e){micAn=null;renderMic("The microphone did not open. Allow it for this site in the browser settings, then tap again.")}
+});
 const soundBtn=document.getElementById("sound");
 soundBtn.addEventListener("click",()=>{
   if(!actx){const AC=window.AudioContext||window.webkitAudioContext;actx=new AC()}
   actx.resume();soundOn=!soundOn;nextStep=null;
-  soundBtn.textContent=soundOn?"Sound on":"Sound off";soundBtn.classList.toggle("on",soundOn);document.getElementById("soundName").textContent=soundBtn.textContent;
+  soundBtn.textContent=soundOn?"Sound on":"Sound off";soundBtn.classList.toggle("on",soundOn);document.getElementById("soundName").textContent=soundBtn.textContent+(micAn?", mic on":"");
   clearInterval(schedTimer);if(soundOn)schedTimer=setInterval(schedule,40);
 });
 
