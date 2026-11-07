@@ -160,6 +160,7 @@ input[type=range]{width:100%;accent-color:var(--blue)}
       <div class="f" style="grid-template-columns:minmax(0,1fr)"><input type="url" id="vidUrl" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="YouTube link, or an https link to an mp4" aria-label="Video link"></div>
       <div class="f" style="grid-template-columns:minmax(0,1fr)"><div class="seg two"><button id="vidLoop">Loop off</button><button id="vidSound">Sound on</button></div></div>
       <div class="f" style="grid-template-columns:minmax(0,1fr)"><div class="seg two"><button class="go big" id="vidGo">Every screen</button><button class="go big" id="vidStunt">Pixels on seats</button></div></div>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><button id="localPick">Pixels on seats from a video on this phone</button><input type="file" id="localFile" accept="video/*" hidden></div>
       <p class="note">Every screen plays the whole video on each phone. Pixels on seats turns the crowd into one big screen, each seat one pixel.</p>
     </section>
     <section class="grp"><h3>Band loop</h3>
@@ -631,9 +632,25 @@ renderFit();
    BLUE PHONE: YouTube will not let a page read its player's picture, but the browser can share its own tab.
    The host shares this tab, cuts the YouTube player out of it, shrinks it to a small grid the shape of the
    stands several times a second, and sends that to the server, which hands each seat just its own color. */
-let shareStream=null,shareVid=null,shareTimer=null,shareFrame=null;
+let shareStream=null,shareVid=null,shareTimer=null,shareFrame=null,shareLocal=false;
 const shareCv=document.createElement("canvas"),shareG=shareCv.getContext("2d",{willReadFrequently:true});
-function stopShare(){clearInterval(shareTimer);shareTimer=null;shareFrame=null;if(shareStream){try{shareStream.getTracks().forEach(k=>k.stop())}catch(e){}}shareStream=null;if(shareVid){shareVid.srcObject=null;shareVid=null}}
+function stopShare(){clearInterval(shareTimer);shareTimer=null;shareFrame=null;if(shareStream){try{shareStream.getTracks().forEach(k=>k.stop())}catch(e){}}shareStream=null;
+  if(shareVid){shareVid.pause();shareVid.srcObject=null;if(shareLocal){URL.revokeObjectURL(shareVid.src);shareVid.removeAttribute("src")}shareVid=null}shareLocal=false}
+/* BLUE PHONE: a video file on the host phone. The host reads its own video's pixels, which needs no screen
+   sharing, and the seats get their colors the same way as the shared tab stunt. */
+$("localPick").addEventListener("click",()=>$("localFile").click());
+$("localFile").addEventListener("change",()=>{
+  const f=$("localFile").files[0];$("localFile").value="";if(!f)return;
+  if(!all.length){say("Set a layout first.");return}
+  stopShare();STADIUM_YT.clear();
+  const v=document.createElement("video");v.playsInline=true;v.muted=vidMuted||!hear;v.loop=vidLoop;v.src=URL.createObjectURL(f);
+  shareVid=v;shareLocal=true;
+  v.addEventListener("ended",()=>{if(shareVid===v&&!vidLoop)say("The video ended.")});
+  v.play().catch(()=>{v.muted=true;v.play().catch(()=>{})});
+  sendCue({type:"share",loop:vidLoop,muted:vidMuted,at:now()+300});
+  say(f.name+" across the crowd, each seat one pixel.");
+  shareTimer=setInterval(shareTick,110);
+});
 async function startShare(yt){
   const plain=why=>{stopShare();sendCue({type:"youtube",id:yt.id,start:yt.start,fit:screenFit,loop:vidLoop,muted:vidMuted,at:now()+3000});say(why)};
   if(!all.length){say("Set a layout first.");return}
@@ -650,10 +667,13 @@ async function startShare(yt){
 function shareTick(){
   if(!cue||cue.type!=="share"){stopShare();return}
   const v=shareVid;if(!v||v.readyState<2||!v.videoWidth)return;
-  const f=$("ytPv").querySelector("iframe")||$("ytPv");const r=f.getBoundingClientRect(),o=$("ytPv").getBoundingClientRect();
-  const x0=Math.max(r.left,o.left),y0=Math.max(r.top,o.top),x1=Math.min(r.right,o.right),y1=Math.min(r.bottom,o.bottom);if(x1-x0<4||y1-y0<4)return;
-  /* the shared tab is this page, so page spots scale straight onto the captured picture */
-  const k=v.videoWidth/innerWidth,sx=x0*k,sy=y0*k,sw=(x1-x0)*k,sh=(y1-y0)*k;
+  let sx=0,sy=0,sw=v.videoWidth,sh=v.videoHeight;
+  if(!shareLocal){
+    const f=$("ytPv").querySelector("iframe")||$("ytPv");const r=f.getBoundingClientRect(),o=$("ytPv").getBoundingClientRect();
+    const x0=Math.max(r.left,o.left),y0=Math.max(r.top,o.top),x1=Math.min(r.right,o.right),y1=Math.min(r.bottom,o.bottom);if(x1-x0<4||y1-y0<4)return;
+    /* the shared tab is this page, so page spots scale straight onto the captured picture */
+    const k=v.videoWidth/innerWidth;sx=x0*k;sy=y0*k;sw=(x1-x0)*k;sh=(y1-y0)*k;
+  }
   const bx=cue.box?boxOf(cue.box):STADIUM.bounds(all),ar=bx.w/bx.h,w=ar>=1?64:Math.max(2,Math.round(64*ar)),h=ar>=1?Math.max(2,Math.round(64/ar)):64;
   shareCv.width=w;shareCv.height=h;
   const s=Math.max(w/sw,h/sh),dw=sw*s,dh=sh*s;shareG.fillStyle="#000";shareG.fillRect(0,0,w,h);
@@ -921,7 +941,7 @@ function draw(){
   }
   g.globalAlpha=1;
   STADIUM_YT.sync($("ytPv"),cue,t,{muted:!hear});if(STADIUM_YT.error){say(STADIUM_YT.error+".");STADIUM_YT.error=""}
-  if(cue&&(cue.type==="image"||(cue.type==="video"&&!(cue.stunt&&mframe)))&&ct>=0)drawMedia(ct);
+  if(cue&&(cue.type==="image"||(cue.type==="video"&&!(cue.stunt&&mframe))||(cue.type==="share"&&shareLocal))&&ct>=0)drawMedia(ct);
   if(selId){g.strokeStyle="#5aa2ff";g.lineWidth=1.5;const sb=STADIUM.bounds(all.filter(s=>s.sec===selId));g.strokeRect(ox+sb.x0*sc-dot-3,oy+sb.y0*sc-dot-3,sb.w*sc+2*dot+6,sb.h*sc+2*dot+6)}
   g.fillStyle="#ffffff";g.font="700 11px sans-serif";g.textAlign="center";g.fillText("STAGE",ox+b.cx*sc,Math.max(11,oy+b.y0*sc-dot-6));
   if(flight){const e=(t-flight.at)/1000;if(e>flight.dur+2)flight=null;else if(e>=0&&e<=flight.dur){const p=STADIUM.sourceAt(flight,b,e);
@@ -931,7 +951,8 @@ function draw(){
 const pImg=new Image(),pVid=document.createElement("video");pVid.muted=true;pVid.playsInline=true;let pKey="";
 function drawMedia(ct){
   let el=null;
-  if(cue.type==="image"){if(pKey!==cue.src){pKey=cue.src;pImg.src=cue.src}el=pImg.complete&&pImg.naturalWidth?pImg:null}
+  if(cue.type==="share"){el=shareVid&&shareVid.readyState>=2?shareVid:null}
+  else if(cue.type==="image"){if(pKey!==cue.src){pKey=cue.src;pImg.src=cue.src}el=pImg.complete&&pImg.naturalWidth?pImg:null}
   else{const k=cue.at+cue.url;if(pKey!==k){pKey=k;pVid.src=cue.url;pVid.loop=!!cue.loop;pVid.play().catch(()=>{})}
     if(pVid.readyState>=2){el=pVid;if(isFinite(pVid.duration)){let t=cue.loop?ct%pVid.duration:ct;if(Math.abs(pVid.currentTime-t)>0.4&&t<=pVid.duration)pVid.currentTime=t}}}
   if(!el)return;const w=el.videoWidth||el.naturalWidth,h=el.videoHeight||el.naturalHeight;if(!w||!h)return;
