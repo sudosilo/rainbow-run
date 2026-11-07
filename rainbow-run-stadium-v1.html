@@ -10,13 +10,17 @@
      A seat code opens this page with the room and the seat in its address. The phone joins the room as a
      stadium seat, works out where its seat sits from the layout the host sends, and lights its whole screen
      with its own pixel of the show. Sound flybys play from every seat with the delay and the pitch bend that
-     seat would hear from a source moving past, so the sound travels through the crowd. -->
+     seat would hear from a source moving past, so the sound travels through the crowd.
+     BLUE PHONE: a picture cue puts the same picture on every screen, and a video cue plays the same video link on
+     every screen, kept in step with the server clock. -->
 <style>
 :root{--ink:#1f2433;--soft:#5b6478;--line:#c9d3e0;--blue:#2f6fd6;--card:#ffffffee}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;overflow:hidden;background:#d6eef9;color:var(--ink);
   font-family:ui-rounded,"SF Pro Rounded","Nunito","Trebuchet MS",system-ui,sans-serif;-webkit-user-select:none;user-select:none}
 #light{position:fixed;inset:0;background:#18202c}
+#pic,#vid{position:fixed;inset:0;width:100%;height:100%;object-fit:contain;background:#000;display:none;pointer-events:none}
+#pic.cover,#vid.cover{object-fit:cover}
 #chip{position:fixed;left:calc(12px + env(safe-area-inset-left,0px));top:calc(12px + env(safe-area-inset-top,0px));
   background:var(--card);border:2px solid var(--blue);border-radius:12px;padding:6px 10px;font-weight:700;font-size:.85rem;transition:opacity .6s}
 #chip.gone{opacity:0}
@@ -33,6 +37,8 @@ button.ghost{background:#eef3f9;color:var(--ink);border:1px solid var(--line)}
 </head>
 <body>
 <div id="light"></div>
+<img id="pic" alt="">
+<video id="vid" playsinline preload="auto"></video>
 <div id="chip" class="gone"></div>
 
 <div class="over" id="entry" hidden>
@@ -110,11 +116,36 @@ function onMsg(m){
   if(m.type==="stadium-sound"){playFlyby(m.sound);return}
 }
 
+/* ---------- picture and video on the whole screen ---------- */
+const pic=$("pic"),vid=$("vid");let picAt=0,vidKey="",lastSync=0;
+function media(now){
+  const c=cue,isPic=!!(c&&c.type==="image"&&now>=c.at),isVid=!!(c&&c.type==="video"&&now>=c.at-1500);
+  if(isPic){if(picAt!==c.at){picAt=c.at;pic.src=c.src}pic.classList.toggle("cover",c.fit==="cover");pic.style.display="block"}
+  else if(pic.style.display!=="none"){pic.style.display="none"}
+  if(isVid){
+    const key=c.at+"|"+c.url;
+    if(vidKey!==key){vidKey=key;vid.src=c.url;vid.loop=!!c.loop;vid.muted=!!c.muted;try{vid.load()}catch(e){}}
+    vid.classList.toggle("cover",c.fit==="cover");
+    const want=(now-c.at)/1000;
+    if(want>=0){
+      vid.style.display="block";
+      if(vid.readyState>=1&&isFinite(vid.duration)){
+        let tgt=want;if(c.loop)tgt=want%vid.duration;
+        if(!c.loop&&want>vid.duration){vid.pause();return}
+        if(vid.paused){vid.currentTime=tgt;vid.play().catch(()=>{vid.muted=true;vid.play().catch(()=>{})})}
+        if(now-lastSync>1000){lastSync=now;const d=tgt-vid.currentTime;
+          if(Math.abs(d)>0.35)vid.currentTime=tgt;else vid.playbackRate=Math.max(0.95,Math.min(1.05,1+d*0.5))}
+      }
+    }
+  } else if(vidKey){vidKey="";vid.pause();vid.removeAttribute("src");try{vid.load()}catch(e){}vid.style.display="none"}
+}
+
 /* ---------- light ---------- */
 const light=$("light");let lastCol="";
 function frame(){
   requestAnimationFrame(frame);
   if(!joined)return;
+  media(clock.synced?clock.now():Date.now());
   let col=[24,32,44];
   if(me&&cue){const now=clock.synced?clock.now():Date.now(),t=(now-cue.at)/1000;
     col=t<0?[24,32,44]:STADIUM.color(cue,me,t,STADIUM.beatCount(loop,cue,now))}

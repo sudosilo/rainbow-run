@@ -146,6 +146,7 @@ function color(cue, s, t, beat) {
   switch (cue.type) {
     case "hold": return a;
     case "dark": return [0, 0, 0];
+    case "image": case "video": return [0, 0, 0];
     case "rainbow": return hsl(s.u * 360 * (+cue.spread || 1) - t * 60 * speed, 90, 55);
     case "wave": {
       const pos = cue.axis === "across" ? s.u : s.ang;

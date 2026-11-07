@@ -12,7 +12,9 @@
      the same core file the seat phones use, so what it shows is what the stands show.
      BLUE PHONE: seating planner. The Plan tab sets how many guests are expected and the fill pattern, simulates
      the show with any number of guests seated, and hands out the next seat at the door with a code to scan.
-     The seat grid editor sets each row's seat count and switches single seats off. -->
+     The seat grid editor sets each row's seat count and switches single seats off.
+     BLUE PHONE: Every screen picture sends one picture to every seat phone at once, and Video plays one video link
+     on every seat phone in step with the server clock. -->
 <style>
 :root{--ink:#1f2433;--soft:#5b6478;--line:#c9d3e0;--blue:#2f6fd6;--chip:#eef3f9;--card:#ffffff}
 *{box-sizing:border-box}
@@ -92,7 +94,10 @@ input[type=color]{width:44px;height:38px;border:1px solid var(--line);border-rad
     <div class="row"><span class="lab">Direction</span><button id="axisAround" class="on">Around</button><button id="axisAcross">Across</button></div>
     <div class="row"><span class="lab">Beat split</span><button id="splitSec" class="on">Sections</button><button id="splitRows">Rows</button></div>
     <div class="row"><span class="lab">Card stunt</span><input type="text" id="stuntText" maxlength="24" placeholder="text for the stands" aria-label="Text for the stands"><button id="stuntGo">Show text</button></div>
-    <div class="row"><span class="lab">Picture</span><button id="picPick">Pick picture</button><input type="file" id="picFile" accept="image/*" hidden></div>
+    <div class="row"><span class="lab">Picture</span><button id="picPick">Card stunt picture</button><input type="file" id="picFile" accept="image/*" hidden><button id="screenPick">Every screen picture</button><input type="file" id="screenFile" accept="image/*" hidden></div>
+    <div class="row"><span class="lab">Screen fit</span><button id="fitWhole" class="on">Whole picture</button><button id="fitFill">Fill screen</button></div>
+    <div class="row"><span class="lab">Video link</span><input type="text" id="vidUrl" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="https link to an mp4 file" aria-label="Video link"></div>
+    <div class="row"><span class="lab">Video</span><button id="vidGo">Play video</button><button id="vidLoop">Loop off</button><button id="vidSound">Sound on</button></div>
     <div class="row"><span class="lab">Band loop</span><button id="bandGo">Start</button><span class="val" id="bandOut">stopped</span></div>
   </div>
 
@@ -336,6 +341,39 @@ $("picFile").addEventListener("change",()=>{
     URL.revokeObjectURL(im.src);if(img){show.type="picture";sendCue({type:"picture",img:img})}
   };im.src=URL.createObjectURL(f);$("picFile").value="";
 });
+/* One picture for every screen: shrunk and squeezed until it fits in one message, then sent to every seat at once. */
+let screenFit="contain";
+function renderFit(){$("fitWhole").classList.toggle("on",screenFit==="contain");$("fitFill").classList.toggle("on",screenFit==="cover");
+  $("vidLoop").textContent=vidLoop?"Loop on":"Loop off";$("vidLoop").classList.toggle("on",vidLoop);$("vidSound").textContent=vidMuted?"Sound off":"Sound on";$("vidSound").classList.toggle("on",!vidMuted)}
+$("fitWhole").addEventListener("click",()=>{screenFit="contain";renderFit();if(cue&&(cue.type==="image"||cue.type==="video"))sendCue(Object.assign({},cue,{fit:screenFit,at:cue.at}))});
+$("fitFill").addEventListener("click",()=>{screenFit="cover";renderFit();if(cue&&(cue.type==="image"||cue.type==="video"))sendCue(Object.assign({},cue,{fit:screenFit,at:cue.at}))});
+$("screenPick").addEventListener("click",()=>$("screenFile").click());
+$("screenFile").addEventListener("change",()=>{
+  const f=$("screenFile").files[0];if(!f)return;$("screenFile").value="";
+  const im=new Image();im.onload=()=>{
+    let side=900,src="";
+    for(let tries=0;tries<12;tries++){
+      const s=Math.min(1,side/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=Math.max(1,Math.round(im.width*s));c.height=Math.max(1,Math.round(im.height*s));
+      const x=c.getContext("2d");x.fillStyle="#000";x.fillRect(0,0,c.width,c.height);x.drawImage(im,0,0,c.width,c.height);
+      src=c.toDataURL("image/jpeg",Math.max(0.45,0.82-tries*0.04));if(src.length<=42000)break;side=Math.round(side*0.85);
+    }
+    URL.revokeObjectURL(im.src);
+    if(src.length>42000){say("That picture would not shrink small enough to send.");return}
+    sendCue({type:"image",src:src,fit:screenFit});say("Picture sent to every screen.");
+  };
+  im.onerror=()=>say("That file did not open as a picture.");
+  im.src=URL.createObjectURL(f);
+});
+let vidLoop=false,vidMuted=false;
+$("vidLoop").addEventListener("click",()=>{vidLoop=!vidLoop;renderFit()});
+$("vidSound").addEventListener("click",()=>{vidMuted=!vidMuted;renderFit()});
+$("vidGo").addEventListener("click",()=>{
+  let u=$("vidUrl").value.trim();if(!u){$("vidUrl").focus();return}
+  if(!/^https?:\/\//i.test(u))u="https://"+u;u=u.replace(/^http:/i,"https:");
+  sendCue({type:"video",url:u,fit:screenFit,loop:vidLoop,muted:vidMuted,at:now()+2500});say("Video starts on every screen in a moment.");
+});
+renderFit();
+
 function bandPlaying(){return !!(loop&&loop.playing)}
 function renderBand(){$("bandGo").textContent=bandPlaying()?"Stop":"Start";$("bandOut").textContent=bandPlaying()?(loop.pending||loop).tempo+" bpm":"stopped"}
 $("bandGo").addEventListener("click",()=>{beat();send({type:"transport",action:bandPlaying()?"stop":"start"})});
@@ -556,10 +594,21 @@ function draw(){
     const r=on?dot:dot*0.7;g.fillRect(x-r,y-r,r*2,r*2);
   }
   g.globalAlpha=1;
+  if(cue&&(cue.type==="image"||cue.type==="video")&&ct>=0)drawMedia(ct);
   if(selId){g.strokeStyle="#5aa2ff";g.lineWidth=1.5;const sb=STADIUM.bounds(all.filter(s=>s.sec===selId));g.strokeRect(ox+sb.x0*sc-dot-3,oy+sb.y0*sc-dot-3,sb.w*sc+2*dot+6,sb.h*sc+2*dot+6)}
   g.fillStyle="#ffffff";g.font="700 11px sans-serif";g.textAlign="center";g.fillText("STAGE",ox+b.cx*sc,Math.max(11,oy+b.y0*sc-dot-6));
   if(flight){const e=(t-flight.at)/1000;if(e>flight.dur+2)flight=null;else if(e>=0&&e<=flight.dur){const p=STADIUM.sourceAt(flight,b,e);
     g.fillStyle="#ffd23a";g.beginPath();g.arc(ox+p[0]*sc,oy+p[1]*sc,6,0,6.283);g.fill()}}
+}
+/* The preview shows the picture or the video the screens show, in step with them. */
+const pImg=new Image(),pVid=document.createElement("video");pVid.muted=true;pVid.playsInline=true;let pKey="";
+function drawMedia(ct){
+  let el=null;
+  if(cue.type==="image"){if(pKey!==cue.src){pKey=cue.src;pImg.src=cue.src}el=pImg.complete&&pImg.naturalWidth?pImg:null}
+  else{const k=cue.at+cue.url;if(pKey!==k){pKey=k;pVid.src=cue.url;pVid.loop=!!cue.loop;pVid.play().catch(()=>{})}
+    if(pVid.readyState>=2){el=pVid;if(isFinite(pVid.duration)){let t=cue.loop?ct%pVid.duration:ct;if(Math.abs(pVid.currentTime-t)>0.4&&t<=pVid.duration)pVid.currentTime=t}}}
+  if(!el)return;const w=el.videoWidth||el.naturalWidth,h=el.videoHeight||el.naturalHeight;if(!w||!h)return;
+  const s=Math.min(PW*0.45/w,PH*0.6/h),dw=w*s,dh=h*s;g.fillStyle="#000";g.fillRect(PW-dw-14,PH-dh-14,dw+8,dh+8);g.drawImage(el,PW-dw-10,PH-dh-10,dw,dh);
 }
 pv.addEventListener("click",e=>{
   if(!view||!layout)return;const r=pv.getBoundingClientRect(),x=(e.clientX-r.left-view.ox)/view.sc,y=(e.clientY-r.top-view.oy)/view.sc;
