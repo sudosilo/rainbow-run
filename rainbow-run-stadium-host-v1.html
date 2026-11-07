@@ -235,6 +235,14 @@ input[type=range]{width:100%;accent-color:var(--blue)}
       <div class="f" style="grid-template-columns:minmax(0,1fr)"><div class="seg two"><button id="undoGuest">Undo last</button><button id="clearGuests">Clear seating</button></div></div>
       <div class="f"><span class="lab">Seated</span><span class="val left" id="seatedOut"></span></div>
     </section>
+    <section class="grp"><h3>Entry kiosks</h3>
+      <p>Each kiosk is a link you open on a phone, tablet or screen at a door. It shows a code for the next guest; the guest scans it and gets a seat. Every door follows the same fill order, each code works once, and every seat records which door gave it.</p>
+      <div class="line" style="margin:0 0 8px"><input type="text" id="kioskName" maxlength="32" placeholder="door name, like North gate" aria-label="Kiosk name"><button class="go" id="kioskAdd">Add kiosk</button></div>
+      <div id="kioskList"></div>
+      <div class="f"><span class="lab">Printed codes</span><div class="seg two"><button id="onlyOff" class="on">Also work</button><button id="onlyOn">Kiosks only</button></div></div>
+      <div class="f"><span class="lab">Handed out</span><span class="val left" id="entryOut">none yet</span></div>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><button id="entryCsv">Download the seat list</button></div>
+    </section>
   </div>
 
   <div class="pane" id="pane-seats" hidden>
@@ -363,6 +371,8 @@ function onMsg(m){
   if(m.type==="stadium-delay"){$("beaconOut").textContent=m.heard+(m.heard===1?" phone hears":" phones hear")+" the beacon, speaker delay "+Math.round(m.delay)+" ms";return}
   if(m.type==="stadium-beacon"){beaconOn=!!(m.beacon&&m.beacon.on);renderBeacon();return}
   if(m.type==="stadium-hype"){hype=m;renderHype();return}
+  if(m.type==="stadium-entry"){entry=m;renderEntry();return}
+  if(m.type==="stadium-entry-list"){downloadEntry(m.rows||[]);return}
   if(m.type==="stadium-hype-seats"){hypeSeats=m.seats||{};return}
   if(m.type==="stadium-count"){phones=m.phones|0;filled=new Set(m.seats||[]);renderCount();renderSeats();return}
 }
@@ -789,7 +799,40 @@ function renderSeats(){
     r.append(l,v,b);box.appendChild(r);
   });
 }
-function seatUrl(id){return location.origin+"/?stadium="+encodeURIComponent(room)+"&seat="+encodeURIComponent(id)}
+function seatUrl(id,t){return location.origin+"/?stadium="+encodeURIComponent(room)+"&seat="+encodeURIComponent(id)+(t?"&t="+encodeURIComponent(t):"")}
+/* ---------- entry kiosks ---------- */
+let entry={kiosks:[],ticketsOnly:false,total:0};
+function kioskUrl(k){return location.origin+"/rainbow-run-stadium-kiosk-v1.html?stadium="+encodeURIComponent(room)+"&kiosk="+encodeURIComponent(k.id)+"&key="+encodeURIComponent(k.token)}
+function renderEntry(){
+  const box=$("kioskList");box.textContent="";
+  entry.kiosks.forEach(k=>{
+    const r=document.createElement("div");r.style.cssText="padding:8px 0;border-top:1px solid #eef2f7";
+    const l=document.createElement("div");l.style.cssText="font-weight:700;font-size:.88rem;margin:0 0 6px";l.textContent=k.name+", "+k.handed+" handed out, "+k.taken+" seated";r.appendChild(l);
+    const bs=document.createElement("div");bs.className="seg three";
+    if(k.token){
+      const o=document.createElement("button");o.textContent="Open";o.addEventListener("click",()=>window.open(kioskUrl(k),"_blank"));
+      const c=document.createElement("button");c.textContent="Copy link";c.addEventListener("click",async()=>{try{await navigator.clipboard.writeText(kioskUrl(k));say("Kiosk link copied for "+k.name+".")}catch(e){say(kioskUrl(k))}});
+      const x=document.createElement("button");x.textContent="Remove";let armed=0;x.addEventListener("click",()=>{if(Date.now()-armed>3000){armed=Date.now();say("Tap Remove again to shut "+k.name+". Its seats stay given out.");return}send({type:"stadium-kiosks",action:"remove",id:k.id})});
+      bs.append(o,c,x);r.appendChild(bs);
+    }
+    box.appendChild(r);
+  });
+  $("onlyOff").classList.toggle("on",!entry.ticketsOnly);$("onlyOn").classList.toggle("on",!!entry.ticketsOnly);
+  let seated=0;entry.kiosks.forEach(k=>seated+=k.taken);
+  $("entryOut").textContent=entry.total?entry.total+" codes handed out, "+seated+" phones seated with them":"none yet";
+}
+$("kioskAdd").addEventListener("click",()=>{if(!host){say("Unlock the host screen first.");return}send({type:"stadium-kiosks",action:"add",name:$("kioskName").value.trim()});$("kioskName").value=""});
+$("onlyOff").addEventListener("click",()=>send({type:"stadium-kiosks",action:"only",on:false}));
+$("onlyOn").addEventListener("click",()=>{send({type:"stadium-kiosks",action:"only",on:true});say("Only kiosk codes seat new phones now. Phones already in a seat stay.")});
+$("entryCsv").addEventListener("click",()=>send({type:"stadium-entry"}));
+function downloadEntry(rows){
+  const iso=t=>t?new Date(t).toISOString():"";
+  const lines=["seat,section,row,seat_number,door,handed_out,taken_by_phone,taken_at"];
+  rows.sort((a,b)=>a.at-b.at).forEach(r=>{const s=all.find(x=>x.id===r.seat);lines.push([r.seat,s?s.sec:"",s?s.row:"",s?s.seat:"",'"'+String(r.kiosk).replace(/"/g,"'")+'"',iso(r.at),r.device,iso(r.takenAt)].join(","))});
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([lines.join("\n")+"\n"],{type:"text/csv"}));
+  a.download="rainbow-run-v1-seats-"+room+".csv";document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500);
+  say(rows.length+" seats in the list.");
+}
 function printSection(id){
   const list=all.filter(x=>x.sec===id),sheet=$("sheet");sheet.textContent="";
   $("printTitle").textContent="Section "+id+", "+list.length+" seats, room "+room;
@@ -871,7 +914,7 @@ function onAssigned(m){
   if(plan.assigned.indexOf(m.seat)<0)plan.assigned.push(m.seat);planDirty=true;renderPlan();
   const s=all.find(x=>x.id===m.seat);
   $("doorSeat").textContent=m.seat;$("doorWhere").textContent=s?"Section "+s.sec+", row "+s.row+", seat "+s.seat:"";
-  const q=qrcode(0,"M");q.addData(seatUrl(m.seat));q.make();$("doorQr").innerHTML=q.createSvgTag({cellSize:4,margin:2,scalable:true});
+  const q=qrcode(0,"M");q.addData(seatUrl(m.seat,m.ticket));q.make();$("doorQr").innerHTML=q.createSvgTag({cellSize:4,margin:2,scalable:true});
   $("door").hidden=false;
   if(plan.fit==="guests"&&cue)sendCue(cue.type==="picture"?{type:"picture",img:cue.img,at:cue.at}:{at:cue.at});
 }
@@ -1000,7 +1043,7 @@ renderShow();renderSound();renderLayout();renderSeats();renderBand();renderCount
   const a=activeAuth();
   if(room&&(mode==="code"?keep(APP+"-host-code"):a&&a.token)){if(mode==="code")code=keep(APP+"-host-code");connect()}
 })();
-window.RRHost={get layout(){return layout},get filled(){return filled},get phones(){return phones},get host(){return host}};
+window.RRHost={get layout(){return layout},get filled(){return filled},get phones(){return phones},get host(){return host},get kioskLinks(){return entry.kiosks.filter(k=>k.token).map(kioskUrl)}};
 })();
 </script>
 </body>

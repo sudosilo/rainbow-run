@@ -62,6 +62,7 @@ button.ghost{background:#eef3f9;color:var(--ink);border:1px solid var(--line)}
     <input id="roomIn" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="room code" aria-label="Room code">
     <input id="seatIn" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="seat, for example A-3-12" aria-label="Seat">
     <button id="entryGo">Take my seat</button>
+    <p id="entryMsg" style="color:#2f6fd6;font-weight:700;margin:4px 0 0"></p>
   </div>
 </div>
 
@@ -105,6 +106,9 @@ if(!device){device=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():Date.n
 const q=new URLSearchParams(location.search);
 let room=cleanRoom(q.get("stadium")||q.get("room")||keep(APP+"-stadium-room"));
 let seatId=cleanSeat(q.get("seat")||keep(APP+"-stadium-seat"));
+/* BLUE PHONE: a seat code from an entry kiosk carries a one time ticket; the phone keeps it with its seat */
+let ticket=String(q.get("t")||"").replace(/[^A-Za-z0-9]/g,"").slice(0,32);
+if(!ticket&&!q.get("seat")&&keep(APP+"-stadium-ticket-seat")===seatId)ticket=keep(APP+"-stadium-ticket")||"";
 
 let sock=null,live=false,retry=0,retryTimer=null,status="not connected";
 let layout=null,me=null,cue=null,loop=null,joined=false,actx=null,wake=null;
@@ -140,7 +144,7 @@ function connect(){
   if(!SYNC_URL||!room)return;
   const s=new WebSocket(SYNC_URL+"?app="+APP+"&room="+encodeURIComponent(room)+"&device="+encodeURIComponent(device)+"&mode=stadium");
   sock=s;status="connecting";
-  s.onopen=()=>{if(sock!==s)return;retry=0;live=true;status="in the room";clock.start();send({type:"stadium-seat",seat:seatId});sendPos()};
+  s.onopen=()=>{if(sock!==s)return;retry=0;live=true;status="in the room";clock.start();send({type:"stadium-seat",seat:seatId,ticket:ticket});sendPos()};
   s.onmessage=e=>{if(sock!==s)return;let m;try{m=JSON.parse(e.data)}catch(_){return}if(!m||m.app!==APP)return;onMsg(m)};
   s.onerror=()=>s.close();
   s.onclose=e=>{if(sock!==s)return;sock=null;live=false;clock.stop();
@@ -152,6 +156,10 @@ function onMsg(m){
   if(m.type==="loop"){loop=m.state||null;return}
   if(m.type==="stadium-layout"){layout=m.layout||null;me=layout?STADIUM.place(layout,seatId):null;sendPos();return}
   if(m.type==="stadium-hype"){hypeState=m;return}
+  if(m.type==="stadium-seated"&&!m.seat&&m.reason){
+    /* the server turned this seat code down: back to the entry card with the reason */
+    clearTimeout(retryTimer);const o=sock;sock=null;if(o)o.close();live=false;joined=false;
+    $("start").hidden=true;$("info").hidden=true;$("entry").hidden=false;$("entryMsg").textContent="Not seated: "+m.reason+".";return}
   if(m.type==="stadium-px"){const h=parseInt(String(m.c||"").slice(1),16);if(h>=0){shareCol=[h>>16&255,h>>8&255,h&255];shareAt=Date.now()}return}
   if(m.type==="stadium-cue"){cue=m.cue||null;return}
   if(m.type==="stadium-sound"){playFlyby(m.sound);return}
@@ -282,13 +290,15 @@ function stateText(){
 function begin(){
   $("entry").hidden=true;$("startSeat").textContent=seatId;$("start").hidden=false;
   keep(APP+"-stadium-room",room);keep(APP+"-stadium-seat",seatId);
+  if(ticket){keep(APP+"-stadium-ticket",ticket);keep(APP+"-stadium-ticket-seat",seatId)}
   connect();
 }
 $("roomIn").value=room;$("seatIn").value=seatId;
 $("entryGo").addEventListener("click",()=>{
   const r=cleanRoom($("roomIn").value),s=cleanSeat($("seatIn").value);
   if(!r){$("roomIn").focus();return}if(!s){$("seatIn").focus();return}
-  room=r;seatId=s;begin();
+  if(s!==seatId)ticket="";
+  room=r;seatId=s;$("entryMsg").textContent="";begin();
 });
 $("startGo").addEventListener("click",async()=>{
   const AC=window.AudioContext||window.webkitAudioContext;
