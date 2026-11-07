@@ -11,6 +11,10 @@
      rows is how many rows, seats how many seats in the front row, grow how many seats each row behind adds.
    A seat is named section, row and seat, for example A-3-12. Rows and seats count from one.
    Row one is the front, seat one is the left end as seen from the stage for blocks and the start of the arc for arcs.
+   BLUE PHONE: seating plan. rowSeats can give any row its own seat count, and off lists single seats that are
+   switched off as "row-seat", for a broken seat or an aisle. An off seat keeps its spot, so the rest still line up.
+   order() lists the free seats in the order guests should be handed them, for a fill pattern, so that however
+   many guests have come the seats they hold already make the best picture for that pattern.
 
    Cue, a light show scene: {type, at, ...} where at is the server time it starts.
    Sound, a flyby that moves across the seats: {path, tone, f0, speed, dur, level, at}. */
@@ -18,16 +22,22 @@
 "use strict";
 const D2R = Math.PI / 180;
 
-function rowSeats(sec, r) { return Math.max(1, sec.seats + sec.grow * r); }
+function rowSeats(sec, r) {
+  const o = sec.rowSeats && sec.rowSeats[r];
+  return typeof o === "number" ? Math.max(0, o) : Math.max(1, sec.seats + sec.grow * r);
+}
+function offSet(sec) { return new Set(Array.isArray(sec.off) ? sec.off : []); }
 
 /* Every seat of a layout with its spot in meters. */
 function seats(layout) {
   const out = [];
   if (!layout || !Array.isArray(layout.sections)) return out;
   layout.sections.forEach(function(sec, si){
+    const off = offSet(sec);
     for (let r = 0; r < sec.rows; r++) {
       const n = rowSeats(sec, r);
       for (let k = 0; k < n; k++) {
+        if (off.has((r + 1) + "-" + (k + 1))) continue;
         let x, y;
         if (sec.kind === "arc") {
           const rad = sec.r + r * sec.rowGap, a = (sec.a0 + sec.span * (k + 0.5) / n) * D2R;
@@ -45,7 +55,7 @@ function seats(layout) {
 
 function count(layout) {
   let t = 0;
-  if (layout && layout.sections) layout.sections.forEach(function(sec){ for (let r = 0; r < sec.rows; r++) t += rowSeats(sec, r); });
+  if (layout && layout.sections) layout.sections.forEach(function(sec){ const off = offSet(sec); for (let r = 0; r < sec.rows; r++) { const n = rowSeats(sec, r); for (let k = 0; k < n; k++) if (!off.has((r + 1) + "-" + (k + 1))) t++; } });
   return t;
 }
 
@@ -126,9 +136,12 @@ function picture(cue) {
   return picData;
 }
 
-/* The color one seat shows at one moment. t is seconds since the cue started, beat the running beat count. */
+/* The color one seat shows at one moment. t is seconds since the cue started, beat the running beat count.
+   A cue with a box fits the show to that box instead of the whole venue, for example to the seats guests hold. */
+function boxOf(q) { return { x0: q.x0, y0: q.y0, x1: q.x1, y1: q.y1, cx: (q.x0 + q.x1) / 2, cy: (q.y0 + q.y1) / 2, w: Math.max(1, q.x1 - q.x0), h: Math.max(1, q.y1 - q.y0) }; }
 function color(cue, s, t, beat) {
   if (!cue || !s) return [24, 30, 44];
+  if (cue.box && typeof cue.box.x0 === "number") s = enrich(s, boxOf(cue.box));
   const a = hex(cue.a), b = hex(cue.b || "#ffffff"), speed = +cue.speed || 1;
   switch (cue.type) {
     case "hold": return a;
@@ -161,6 +174,56 @@ function color(cue, s, t, beat) {
     }
   }
   return a;
+}
+
+/* ---------- seating plan ---------- */
+/* Shapes for the shape pattern, over the whole venue from zero to one each way, kept round on long venues. */
+const SHAPES = {
+  heart: function(X, Y){ const x = X * 2.6, y = -Y * 2.6 + 0.3, a = x * x + y * y - 1; return a * a * a - x * x * y * y * y <= 0; },
+  star: function(X, Y){ const r = Math.hypot(X, Y), a = Math.atan2(Y, X) + Math.PI / 2, k = (a % (2 * Math.PI / 5) + 2 * Math.PI / 5) % (2 * Math.PI / 5) - Math.PI / 5; return r <= 0.2 + 0.26 * Math.pow(Math.cos(k * 2.5), 6); },
+  circle: function(X, Y){ return Math.hypot(X, Y) <= 0.38; },
+  ring: function(X, Y){ const r = Math.hypot(X, Y); return r >= 0.26 && r <= 0.44; },
+  diamond: function(X, Y){ return Math.abs(X) + Math.abs(Y) <= 0.42; },
+  cross: function(X, Y){ return Math.abs(Math.abs(X) - Math.abs(Y)) <= 0.09 && Math.abs(X) <= 0.42; }
+};
+/* mask(u, v) is true where a seat belongs to the shape. text masks come from the host screen. */
+function shapeMask(name, b) {
+  const f = SHAPES[name] || SHAPES.heart, m = Math.max(b.w, b.h);
+  return function(u, v){ return f((u - 0.5) * b.w / m, (v - 0.5) * b.h / m); };
+}
+/* Free seats in the order guests get them. plan: {pattern, assigned}; mask is used by the shape pattern. */
+function order(layout, plan, mask) {
+  const all = placeAll(layout), taken = new Set((plan && plan.assigned) || []);
+  const free = all.filter(function(s){ return !taken.has(s.id); }), held = all.filter(function(s){ return taken.has(s.id); });
+  if (!free.length) return [];
+  const b = all[0].b, arcs = layout.sections.some(function(s){ return s.kind === "arc"; });
+  const pattern = (plan && plan.pattern) || "pack";
+  let fx = b.cx, fy = arcs ? b.cy : b.y0;
+  if (pattern === "center") { fx = 0; fy = 0; all.forEach(function(s){ fx += s.x; fy += s.y; }); fx /= all.length; fy /= all.length; }
+  const byFocus = function(list){ return list.map(function(s){ return [Math.hypot(s.x - fx, s.y - fy) + s.id.length * 1e-9, s]; }).sort(function(a, c){ return a[0] - c[0] || (a[1].id < c[1].id ? -1 : 1); }).map(function(p){ return p[1]; }); };
+  if (pattern === "pack" || pattern === "center") return byFocus(free);
+  if (pattern === "checker") {
+    const a = free.filter(function(s){ return (s.row + s.seat) % 2 === 0; }), c = free.filter(function(s){ return (s.row + s.seat) % 2 === 1; });
+    return byFocus(a).concat(byFocus(c));
+  }
+  if (pattern === "shape") {
+    const m = mask || shapeMask(plan && plan.shape, b);
+    const inn = free.filter(function(s){ return m(s.u, s.v); }), out = free.filter(function(s){ return !m(s.u, s.v); });
+    fx = b.cx; fy = b.cy;
+    return byFocus(inn).concat(byFocus(out));
+  }
+  /* scatter: each next seat is the free seat farthest from every seat already held, so the crowd spreads evenly */
+  const n = free.length, xs = new Float64Array(n), ys = new Float64Array(n), best = new Float64Array(n), used = new Uint8Array(n), out = [];
+  for (let i = 0; i < n; i++) { xs[i] = free[i].x; ys[i] = free[i].y; best[i] = Infinity; }
+  const near = function(x, y){ for (let i = 0; i < n; i++) if (!used[i]) { const d = (xs[i] - x) * (xs[i] - x) + (ys[i] - y) * (ys[i] - y); if (d < best[i]) best[i] = d; } };
+  held.forEach(function(s){ near(s.x, s.y); });
+  let pick = -1;
+  if (!held.length) { let d0 = Infinity; for (let i = 0; i < n; i++) { const d = Math.hypot(xs[i] - b.cx, ys[i] - b.cy); if (d < d0) { d0 = d; pick = i; } } }
+  for (let k = 0; k < n; k++) {
+    if (pick < 0) { let bd = -1; for (let i = 0; i < n; i++) if (!used[i] && (best[i] > bd + 1e-9)) { bd = best[i]; pick = i; } }
+    used[pick] = 1; out.push(free[pick]); near(xs[pick], ys[pick]); pick = -1;
+  }
+  return out;
 }
 
 /* ---------- the shared beat ---------- */
@@ -213,6 +276,6 @@ function flyby(snd, s, step) {
   return { freq: freq, gain: gain, step: step, total: total };
 }
 
-window.STADIUM = { seats: seats, count: count, bounds: bounds, place: place, placeAll: placeAll, PRESETS: PRESETS,
+window.STADIUM = { seats: seats, count: count, bounds: bounds, place: place, placeAll: placeAll, PRESETS: PRESETS, order: order, shapeMask: shapeMask, SHAPES: SHAPES, rowSeats: rowSeats,
   color: color, hex: hex, beatCount: beatCount, flyby: flyby, sourceAt: sourceAt, MAX: 2500 };
 })();

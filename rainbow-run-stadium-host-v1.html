@@ -9,7 +9,10 @@
 <!-- BLUE PHONE: Rainbow Run stadium mode, the host screen.
      Unlocked with the host code set on the band server. It sets the seat layout and moves its sections live,
      runs the light show, launches sound flybys, and prints the seat codes. The preview draws every seat with
-     the same core file the seat phones use, so what it shows is what the stands show. -->
+     the same core file the seat phones use, so what it shows is what the stands show.
+     BLUE PHONE: seating planner. The Plan tab sets how many guests are expected and the fill pattern, simulates
+     the show with any number of guests seated, and hands out the next seat at the door with a code to scan.
+     The seat grid editor sets each row's seat count and switches single seats off. -->
 <style>
 :root{--ink:#1f2433;--soft:#5b6478;--line:#c9d3e0;--blue:#2f6fd6;--chip:#eef3f9;--card:#ffffff}
 *{box-sizing:border-box}
@@ -44,6 +47,13 @@ input[type=color]{width:44px;height:38px;border:1px solid var(--line);border-rad
 .card p{margin:0 0 12px;color:var(--soft);line-height:1.4}
 .card input{width:100%;margin:0 0 10px}
 .card button{width:100%;margin:0 0 8px}
+.grow{display:flex;align-items:center;gap:6px;margin:0 0 8px}
+.grow .ctl{display:flex;align-items:center;gap:4px;flex:none;width:9.5em}
+.grow .ctl b{min-width:3.2em;font-size:.8rem}
+.grow .ctl button{padding:6px 8px;min-width:2.2em}
+.cells{display:flex;gap:3px;overflow-x:auto;padding:2px 0}
+.cell{flex:none;width:22px;height:22px;border-radius:5px;border:1px solid #2f6fd6;background:#2f6fd6;padding:0;min-width:0}
+.cell.off{background:#fff;border-style:dashed;border-color:#9aa6b8}
 #print{position:fixed;inset:0;background:#fff;z-index:6;overflow-y:auto;padding:12px}
 #print[hidden]{display:none}
 #printBar{position:sticky;top:0;background:#fff;display:flex;gap:8px;padding:0 0 10px;align-items:center}
@@ -68,6 +78,7 @@ input[type=color]{width:44px;height:38px;border:1px solid var(--line);border-rad
     <button data-tab="show" class="on">Show</button>
     <button data-tab="layout">Layout</button>
     <button data-tab="sound">Sound</button>
+    <button data-tab="plan">Plan</button>
     <button data-tab="seats">Seats</button>
   </div>
 
@@ -99,6 +110,7 @@ input[type=color]{width:44px;height:38px;border:1px solid var(--line);border-rad
     <div class="row"><span class="lab">Row adds</span><button data-k="grow" data-d="-1">&#8722;</button><span class="val" id="growOut"></span><button data-k="grow" data-d="1">+</button></div>
     <div class="row" data-for="block"><span class="lab">Seat gap</span><button data-k="seatGap" data-d="-0.05">&#8722;</button><span class="val" id="seatGapOut"></span><button data-k="seatGap" data-d="0.05">+</button></div>
     <div class="row"><span class="lab">Row gap</span><button data-k="rowGap" data-d="-0.05">&#8722;</button><span class="val" id="rowGapOut"></span><button data-k="rowGap" data-d="0.05">+</button></div>
+    <div class="row"><span class="lab">Seat grid</span><button id="gridOpen">Edit rows and seats</button></div>
   </div>
 
   <div class="pane" id="pane-sound" hidden>
@@ -109,6 +121,17 @@ input[type=color]{width:44px;height:38px;border:1px solid var(--line);border-rad
     <div class="row"><span class="lab">Level</span><button data-s="level" data-d="-0.1">&#8722;</button><span class="val" id="sLevelOut"></span><button data-s="level" data-d="0.1">+</button></div>
     <div class="row"><span class="lab">This screen</span><button id="hearHost">Listen here off</button></div>
     <div class="row"><button class="go" id="launch">Launch flyby</button><span class="val" id="durOut"></span></div>
+  </div>
+
+  <div class="pane" id="pane-plan" hidden>
+    <div class="row"><span class="lab">Guests</span><button data-g="-10">&#8722;10</button><button data-g="-1">&#8722;</button><span class="val" id="guestsOut"></span><button data-g="1">+</button><button data-g="10">+10</button></div>
+    <div class="row"><span class="lab">Fill</span><button data-fill="pack">Pack front</button><button data-fill="center">Pack middle</button><button data-fill="scatter">Scatter</button><button data-fill="checker">Checker</button><button data-fill="shape">Shape</button></div>
+    <div class="row"><span class="lab">Shape</span><button data-shape="heart">Heart</button><button data-shape="star">Star</button><button data-shape="circle">Circle</button><button data-shape="ring">Ring</button><button data-shape="diamond">Diamond</button><button data-shape="cross">Cross</button><button data-shape="text">Text</button></div>
+    <div class="row"><span class="lab">Shape text</span><input type="text" id="shapeText" maxlength="12" placeholder="letters to seat" aria-label="Letters to seat guests in"></div>
+    <div class="row"><span class="lab">Show fits</span><button id="fitVenue">Whole venue</button><button id="fitGuests">Guests only</button></div>
+    <div class="row"><span class="lab">Simulate</span><input type="range" id="simIn" min="0" max="0" value="0" style="flex:1;min-width:0" aria-label="Guests to simulate"><span class="val" id="simOut"></span></div>
+    <div class="row"><span class="lab">Door</span><button class="go" id="nextGuest">Next guest</button><button id="undoGuest">Undo last</button><button id="clearGuests">Clear seating</button></div>
+    <div class="row"><span class="lab">Seated</span><span class="val" id="seatedOut"></span></div>
   </div>
 
   <div class="pane" id="pane-seats" hidden>
@@ -124,6 +147,25 @@ input[type=color]{width:44px;height:38px;border:1px solid var(--line);border-rad
     <input type="password" id="codeIn" autocomplete="off" placeholder="host code" aria-label="Host code">
     <button class="go" id="unlockGo">Unlock</button>
     <p id="unlockMsg"></p>
+  </div>
+</div>
+
+<div class="over" id="door" hidden>
+  <div class="card" style="text-align:center">
+    <h2>Next guest</h2>
+    <div id="doorSeat" style="font-size:2.2rem;font-weight:800">&nbsp;</div>
+    <p id="doorWhere">&nbsp;</p>
+    <div id="doorQr" style="width:100%;max-width:260px;margin:0 auto 12px;aspect-ratio:1"></div>
+    <button class="go" id="doorNext">Next guest</button>
+    <button id="doorDone">Done</button>
+  </div>
+</div>
+
+<div id="gridEd" class="over" hidden style="align-items:stretch;padding:0;background:#fff">
+  <div style="display:grid;grid-template-rows:auto auto minmax(0,1fr);width:100%;height:100%">
+    <div class="row" style="padding:12px 16px 0;margin:0"><button class="go" id="gridClose">Done</button><b id="gridTitle"></b></div>
+    <p style="margin:6px 16px 8px;color:var(--soft);font-size:.8rem">Minus and plus set how many seats a row has. Tap a seat to switch it off for a broken seat or an aisle, tap again to bring it back.</p>
+    <div id="gridRows" style="overflow:auto;padding:0 16px 24px"></div>
   </div>
 </div>
 
@@ -178,6 +220,8 @@ function onMsg(m){
     renderConn();return}
   if(m.type==="stadium-layout"){if(m.layout&&!pendingLayout){layout=m.layout;rebuild()}else if(!m.layout&&!layout)say("No seat layout yet. Pick one in the Layout tab.");return}
   if(m.type==="stadium-cue"){cue=m.cue;renderShow();return}
+  if(m.type==="stadium-plan"){if(m.plan){plan=Object.assign(plan,m.plan)}planDirty=true;renderPlan();return}
+  if(m.type==="stadium-assigned"){onAssigned(m);return}
   if(m.type==="stadium-count"){phones=m.phones|0;filled=new Set(m.seats||[]);renderCount();renderSeats();return}
 }
 function renderConn(){$("conn").textContent=!live?"not connected":host?"host, room "+room:"unlocking"}
@@ -195,7 +239,8 @@ $("unlockGo").addEventListener("click",()=>{
 /* ---------- tabs ---------- */
 document.querySelectorAll("#tabs button").forEach(b=>b.addEventListener("click",()=>{
   document.querySelectorAll("#tabs button").forEach(x=>x.classList.toggle("on",x===b));
-  ["show","layout","sound","seats"].forEach(t=>$("pane-"+t).hidden=t!==b.dataset.tab);
+  ["show","layout","sound","plan","seats"].forEach(t=>$("pane-"+t).hidden=t!==b.dataset.tab);
+  planView=b.dataset.tab==="plan";
 }));
 
 /* ---------- layout ---------- */
@@ -204,7 +249,7 @@ function sendLayoutSoon(){pendingLayout=true;clearTimeout(layoutTimer);layoutTim
 function rebuild(){
   all=layout?STADIUM.placeAll(layout):[];
   if(layout&&sel>=layout.sections.length)sel=Math.max(0,layout.sections.length-1);
-  renderLayout();renderSeats();renderCount();renderSound();
+  renderLayout();renderSeats();renderCount();renderSound();planDirty=true;renderPlan();if(!$("gridEd").hidden)renderGrid();
 }
 const FIELDS={x:[-2000,2000,1],y:[-2000,2000,1],rot:[-360,360,0],r:[1,2000,1],a0:[-720,720,0],span:[1,360,0],rows:[1,200,0],seats:[1,400,0],grow:[-20,40,0],seatGap:[0.3,5,2],rowGap:[0.3,5,2]};
 function fmt(k,v){const d=FIELDS[k][2];return (+v).toFixed(d)+(k==="x"||k==="y"||k==="r"||k==="seatGap"||k==="rowGap"?" m":k==="rot"||k==="a0"||k==="span"?"°":"")}
@@ -245,6 +290,7 @@ $("delSec").addEventListener("click",()=>{if(!layout||layout.sections.length<2){
 const show={type:"rainbow",speed:1,detail:4,axis:"around",split:"sections"};
 function sendCue(extra){
   const c=Object.assign({type:show.type,a:$("colA").value,b:$("colB").value,speed:show.speed,spread:show.detail/4,width:0.015*show.detail,rings:show.detail,axis:show.axis,split:show.split,bpm:120,at:now()+600},extra||{});
+  if(plan.fit==="guests"){const bx=guestBox(plan.assigned);if(bx)c.box=bx}
   cue=c;send({type:"stadium-cue",cue:c});renderShow();
 }
 function renderShow(){
@@ -366,6 +412,122 @@ function printSection(id){
 $("printGo").addEventListener("click",()=>window.print());
 $("printClose").addEventListener("click",()=>{$("print").hidden=true});
 
+/* ---------- seating plan ---------- */
+let plan={guests:0,pattern:"pack",shape:"heart",text:"",fit:"venue",assigned:[]},planView=false,planDirty=true,ord=[],sim=0;
+let planTimer=null;
+function sendPlanSoon(){clearTimeout(planTimer);planTimer=setTimeout(()=>send({type:"stadium-plan",plan:plan}),200)}
+/* A text shape is drawn on a small canvas the shape of the venue; seats under the letters belong to it. */
+function textMask(){
+  const t=(plan.text||"").trim();if(!t||!all.length)return null;
+  const b=STADIUM.bounds(all),ar=b.w/b.h,w=Math.max(16,Math.min(240,Math.round(Math.sqrt(9000*ar)))),h=Math.max(16,Math.round(w/ar));
+  const c=document.createElement("canvas");c.width=w;c.height=h;const x=c.getContext("2d");
+  let size=h;x.font="900 "+size+"px sans-serif";while(size>4&&x.measureText(t).width>w*0.92){size--;x.font="900 "+size+"px sans-serif"}
+  x.textAlign="center";x.textBaseline="middle";x.fillText(t,w/2,h/2+size*0.05);
+  const px=x.getImageData(0,0,w,h).data;
+  return (u,v)=>{const i=Math.min(h-1,Math.max(0,Math.floor(v*h)))*w+Math.min(w-1,Math.max(0,Math.floor(u*w)));return px[i*4+3]>100};
+}
+function planOrder(){
+  if(!planDirty)return ord;planDirty=false;
+  if(!layout){ord=[];return ord}
+  const q=Object.assign({},plan);let mask=null;
+  if(q.pattern==="shape"&&q.shape==="text")mask=textMask();
+  ord=STADIUM.order(layout,q,mask);return ord;
+}
+/* The seats that show in the planner: handed out, then the simulated guests still to come. */
+function shownSeats(){
+  const o=planOrder(),held=new Set(plan.assigned),extra=Math.max(0,sim-plan.assigned.length);
+  for(let i=0;i<Math.min(extra,o.length);i++)held.add(o[i].id);
+  return held;
+}
+function guestBox(ids){
+  const set=ids instanceof Set?ids:new Set(ids||[]),list=all.filter(s=>set.has(s.id));
+  if(list.length<2)return null;const b=STADIUM.bounds(list);return {x0:b.x0,y0:b.y0,x1:b.x1,y1:b.y1};
+}
+function renderPlan(){
+  const total=all.length;
+  if(!plan.guests||plan.guests>total)plan.guests=Math.min(total,plan.guests||total);
+  $("guestsOut").textContent=plan.guests+" of "+total;
+  document.querySelectorAll("[data-fill]").forEach(b=>b.classList.toggle("on",b.dataset.fill===plan.pattern));
+  document.querySelectorAll("[data-shape]").forEach(b=>{b.classList.toggle("on",b.dataset.shape===plan.shape);b.disabled=plan.pattern!=="shape"});
+  $("shapeText").disabled=!(plan.pattern==="shape"&&plan.shape==="text");
+  if(document.activeElement!==$("shapeText"))$("shapeText").value=plan.text||"";
+  $("fitVenue").classList.toggle("on",plan.fit!=="guests");$("fitGuests").classList.toggle("on",plan.fit==="guests");
+  const si=$("simIn");si.max=String(plan.guests);if(sim>plan.guests)sim=plan.guests;si.value=String(sim);
+  $("simOut").textContent=sim+" guests";
+  $("seatedOut").textContent=plan.assigned.length+" handed out, "+Math.max(0,plan.guests-plan.assigned.length)+" to come";
+}
+function setPlan(k,v){plan[k]=v;planDirty=true;renderPlan();sendPlanSoon();if(k==="fit"&&cue)sendCue(cue.type==="picture"?{type:"picture",img:cue.img}:{})}
+document.querySelectorAll("[data-g]").forEach(b=>b.addEventListener("click",()=>{setPlan("guests",Math.max(plan.assigned.length,Math.min(all.length,plan.guests+ +b.dataset.g)))}));
+document.querySelectorAll("[data-fill]").forEach(b=>b.addEventListener("click",()=>setPlan("pattern",b.dataset.fill)));
+document.querySelectorAll("[data-shape]").forEach(b=>b.addEventListener("click",()=>setPlan("shape",b.dataset.shape)));
+$("shapeText").addEventListener("input",()=>setPlan("text",$("shapeText").value.slice(0,12)));
+$("fitVenue").addEventListener("click",()=>setPlan("fit","venue"));
+$("fitGuests").addEventListener("click",()=>setPlan("fit","guests"));
+$("simIn").addEventListener("input",()=>{sim=+$("simIn").value;$("simOut").textContent=sim+" guests"});
+/* At the door: the next seat in the fill order goes to the server, which makes sure no two door screens hand out one seat. */
+let waiting="",retries=0;
+function nextGuest(){
+  if(!host){say("Unlock the host screen first.");return}
+  if(plan.assigned.length>=plan.guests){say("Every expected guest has a seat. Raise the guest count to seat more.");return}
+  const o=planOrder();if(!o.length){say("No free seats left.");return}
+  waiting=o[0].id;send({type:"stadium-assign",seat:waiting});
+}
+function onAssigned(m){
+  if(m.seat!==waiting)return;
+  if(!m.ok){if(retries++<5){planDirty=true;waiting="";setTimeout(nextGuest,150)}return}
+  retries=0;waiting="";
+  if(plan.assigned.indexOf(m.seat)<0)plan.assigned.push(m.seat);planDirty=true;renderPlan();
+  const s=all.find(x=>x.id===m.seat);
+  $("doorSeat").textContent=m.seat;$("doorWhere").textContent=s?"Section "+s.sec+", row "+s.row+", seat "+s.seat:"";
+  const q=qrcode(0,"M");q.addData(seatUrl(m.seat));q.make();$("doorQr").innerHTML=q.createSvgTag({cellSize:4,margin:2,scalable:true});
+  $("door").hidden=false;
+  if(plan.fit==="guests"&&cue)sendCue(cue.type==="picture"?{type:"picture",img:cue.img,at:cue.at}:{at:cue.at});
+}
+$("nextGuest").addEventListener("click",nextGuest);
+$("doorNext").addEventListener("click",nextGuest);
+$("doorDone").addEventListener("click",()=>{$("door").hidden=true});
+$("undoGuest").addEventListener("click",()=>{if(!plan.assigned.length)return;const id=plan.assigned.pop();planDirty=true;renderPlan();sendPlanSoon();say("Seat "+id+" is free again.")});
+let clearArmed=0;
+$("clearGuests").addEventListener("click",()=>{
+  if(Date.now()-clearArmed>3000){clearArmed=Date.now();say("Tap Clear seating again to free every handed out seat.");return}
+  clearArmed=0;plan.assigned=[];planDirty=true;renderPlan();sendPlanSoon();say("Every seat is free again.");
+});
+
+/* ---------- seat grid editor ---------- */
+function renderGrid(){
+  const box=$("gridRows");box.textContent="";
+  const sec=layout&&layout.sections[sel];if(!sec){$("gridEd").hidden=true;return}
+  $("gridTitle").textContent="Section "+sec.id+", "+all.filter(x=>x.sec===sec.id).length+" seats";
+  const off=new Set(sec.off||[]);
+  for(let r=0;r<sec.rows;r++){
+    const n=STADIUM.rowSeats(sec,r),line=document.createElement("div");line.className="grow";
+    const ctl=document.createElement("div");ctl.className="ctl";
+    const minus=document.createElement("button");minus.textContent="\u2212";minus.setAttribute("aria-label","One seat fewer in row "+(r+1));
+    const lab=document.createElement("b");lab.textContent="R"+(r+1)+" "+n;
+    const plus=document.createElement("button");plus.textContent="+";plus.setAttribute("aria-label","One seat more in row "+(r+1));
+    minus.addEventListener("click",()=>setRow(r,n-1));plus.addEventListener("click",()=>setRow(r,n+1));
+    ctl.append(minus,lab,plus);
+    const cells=document.createElement("div");cells.className="cells";
+    for(let k=0;k<n;k++){const c=document.createElement("button");c.className="cell"+(off.has((r+1)+"-"+(k+1))?" off":"");c.setAttribute("aria-label","Row "+(r+1)+" seat "+(k+1));
+      c.addEventListener("click",()=>toggleSeat(r,k,c));cells.appendChild(c)}
+    line.append(ctl,cells);box.appendChild(line);
+  }
+}
+function setRow(r,n){
+  const sec=layout.sections[sel];if(n<0||n>400)return;
+  if(!sec.rowSeats)sec.rowSeats=[];const old=sec.rowSeats[r];sec.rowSeats[r]=n;
+  if(STADIUM.count(layout)>STADIUM.MAX){sec.rowSeats[r]=old;say("That would go over "+STADIUM.MAX+" seats.");return}
+  const keepScroll=$("gridRows").scrollTop;rebuild();sendLayoutSoon();$("gridRows").scrollTop=keepScroll;
+}
+function toggleSeat(r,k,cell){
+  const sec=layout.sections[sel],key=(r+1)+"-"+(k+1);if(!sec.off)sec.off=[];
+  const i=sec.off.indexOf(key);if(i>=0)sec.off.splice(i,1);else sec.off.push(key);
+  cell.classList.toggle("off",i<0);all=STADIUM.placeAll(layout);planDirty=true;renderPlan();renderSeats();renderCount();
+  $("gridTitle").textContent="Section "+sec.id+", "+all.filter(x=>x.sec===sec.id).length+" seats";sendLayoutSoon();
+}
+$("gridOpen").addEventListener("click",()=>{if(!layout){say("Pick a layout first.");return}renderGrid();$("gridEd").hidden=false});
+$("gridClose").addEventListener("click",()=>{$("gridEd").hidden=true});
+
 /* ---------- preview ---------- */
 const pv=$("pv"),g=pv.getContext("2d");let PW=0,PH=0,view=null;
 function size(){const d=Math.min(2,devicePixelRatio||1),r=pv.getBoundingClientRect();PW=r.width;PH=r.height;pv.width=Math.round(PW*d);pv.height=Math.round(PH*d);g.setTransform(d,0,0,d,0,0)}
@@ -379,8 +541,17 @@ function draw(){
   view={sc,ox,oy};
   const t=now(),bc=cue?STADIUM.beatCount(loop,cue,t):0,ct=cue?(t-cue.at)/1000:0,dot=Math.max(1.2,Math.min(6,sc*0.5));
   const selId=layout&&layout.sections[sel]?layout.sections[sel].id:"";
+  /* In the Plan tab only the handed out and simulated guests light up; empty seats stay dark. */
+  const shown=planView?shownSeats():null;
+  let pc=cue;
+  if(cue&&planView&&plan.fit==="guests"){const bx=guestBox(shown);pc=Object.assign({},cue,{box:bx||undefined})}
   for(let i=0;i<all.length;i++){
-    const s=all[i],c=cue&&ct>=0?STADIUM.color(cue,s,ct,bc):[60,70,86],x=ox+s.x*sc,y=oy+s.y*sc,on=filled.has(s.id);
+    const s=all[i],x=ox+s.x*sc,y=oy+s.y*sc;
+    if(shown){
+      if(!shown.has(s.id)){g.globalAlpha=1;g.fillStyle="#2a3446";g.fillRect(x-dot*0.5,y-dot*0.5,dot,dot);continue}
+      const c=pc&&ct>=0?STADIUM.color(pc,s,ct,bc):[90,140,220];g.globalAlpha=1;g.fillStyle="rgb("+c[0]+","+c[1]+","+c[2]+")";g.fillRect(x-dot,y-dot,dot*2,dot*2);continue;
+    }
+    const c=cue&&ct>=0?STADIUM.color(cue,s,ct,bc):[60,70,86],on=filled.has(s.id);
     g.fillStyle="rgb("+c[0]+","+c[1]+","+c[2]+")";g.globalAlpha=on||!phones?1:0.45;
     const r=on?dot:dot*0.7;g.fillRect(x-r,y-r,r*2,r*2);
   }
@@ -396,7 +567,7 @@ pv.addEventListener("click",e=>{
   if(best){sel=best.si;renderLayout();say("Section "+best.sec+", nearest seat "+best.id)}
 });
 
-renderShow();renderSound();renderLayout();renderSeats();renderBand();renderCount();draw();
+renderShow();renderSound();renderLayout();renderSeats();renderBand();renderCount();renderPlan();draw();
 if(room&&keep(APP+"-host-code")){code=keep(APP+"-host-code");connect()}
 window.RRHost={get layout(){return layout},get filled(){return filled},get phones(){return phones},get host(){return host}};
 })();
