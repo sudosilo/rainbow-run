@@ -158,8 +158,9 @@ input[type=range]{width:100%;accent-color:var(--blue)}
     <section class="grp"><h3>Video</h3>
       <div class="f" style="grid-template-columns:minmax(0,1fr)"><select id="vidSel" aria-label="Video saved with the show"><option value="">Pick a saved video, or use a link</option></select></div>
       <div class="f" style="grid-template-columns:minmax(0,1fr)"><input type="url" id="vidUrl" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="YouTube link, or an https link to an mp4" aria-label="Video link"></div>
-      <div class="f" style="grid-template-columns:minmax(0,1fr)"><div class="seg three"><button id="vidLoop">Loop off</button><button id="vidSound">Sound on</button><button id="vidStunt">Whole video</button></div></div>
-      <div class="f" style="grid-template-columns:minmax(0,1fr)"><button class="go big" id="vidGo">Play video</button></div>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><div class="seg two"><button id="vidLoop">Loop off</button><button id="vidSound">Sound on</button></div></div>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><div class="seg two"><button class="go big" id="vidGo">Every screen</button><button class="go big" id="vidStunt">Pixels on seats</button></div></div>
+      <p class="note">Every screen plays the whole video on each phone. Pixels on seats turns the crowd into one big screen, each seat one pixel.</p>
     </section>
     <section class="grp"><h3>Band loop</h3>
       <div class="f"><span class="lab">Loop</span><div class="line"><span class="val left" id="bandOut">stopped</span><button id="bandGo" style="width:90px">Start</button></div></div>
@@ -601,7 +602,8 @@ let vidLoop=false,vidMuted=false,vidStunt=false;
 /* BLUE PHONE: videos saved with the show play from each phone's own copy, so nothing but the cue crosses the network. */
 fetch("rainbow-run-v1-assets.json").then(r=>r.json()).then(j=>{(j.videos||[]).forEach(v=>{const o=document.createElement("option");o.value=v.file;o.textContent=v.name;$("vidSel").appendChild(o)})}).catch(()=>{});
 $("vidSel").addEventListener("change",()=>{if($("vidSel").value)$("vidUrl").value=""});
-$("vidStunt").addEventListener("click",()=>{vidStunt=!vidStunt;$("vidStunt").textContent=vidStunt?"Video stunt":"Whole video";$("vidStunt").classList.toggle("on",vidStunt)});
+/* BLUE PHONE: two play buttons instead of a stunt switch, so it is plain which way the video plays */
+$("vidStunt").addEventListener("click",()=>{vidStunt=true;playVid()});
 /* Demo: every Rainbow Run animation, in the groups its own menu shows. */
 (function(){
   const sel=$("demoSel"),o0=document.createElement("option");o0.value="";o0.textContent="Pick an animation";sel.appendChild(o0);
@@ -611,7 +613,8 @@ $("vidStunt").addEventListener("click",()=>{vidStunt=!vidStunt;$("vidStunt").tex
 window.__stadiumNow=()=>now();window.__stadiumLoop=()=>loop;
 $("vidLoop").addEventListener("click",()=>{vidLoop=!vidLoop;renderFit()});
 $("vidSound").addEventListener("click",()=>{vidMuted=!vidMuted;renderFit()});
-$("vidGo").addEventListener("click",()=>{
+$("vidGo").addEventListener("click",()=>{vidStunt=false;playVid()});
+function playVid(){
   let u=$("vidSel").value||$("vidUrl").value.trim();if(!u){$("vidUrl").focus();return}
   /* BLUE PHONE: a YouTube link plays in YouTube's own player on every screen */
   const yt=$("vidSel").value?null:STADIUM_YT.parse(u);
@@ -621,7 +624,7 @@ $("vidGo").addEventListener("click",()=>{
   stopShare();
   if(u.indexOf("rainbow-run-videos/")!==0){if(!/^https?:\/\//i.test(u))u="https://"+u;u=u.replace(/^http:/i,"https:")}
   sendCue({type:"video",url:u,fit:screenFit,loop:vidLoop,muted:vidMuted,stunt:vidStunt,at:now()+2500});say(vidStunt?"Video stunt starts across the crowd in a moment.":"Video starts on every screen in a moment.");
-});
+}
 renderFit();
 
 /* ---------- screen share stunt ----------
