@@ -163,6 +163,12 @@ input[type=range]{width:100%;accent-color:var(--blue)}
       <div class="f" style="grid-template-columns:minmax(0,1fr)"><button id="localPick">Pixels on seats from a video on this phone</button><input type="file" id="localFile" accept="video/*" hidden></div>
       <p class="note">Every screen plays the whole video on each phone. Pixels on seats turns the crowd into one big screen, each seat one pixel.</p>
     </section>
+    <section class="grp"><h3>Hype meter</h3>
+      <p>Every seat phone glows green, then red as its owner shakes it. The whole crowd's shaking fills one big meter.</p>
+      <div class="f"><span class="lab">To fill</span><div class="step"><button data-hs="-5" aria-label="Shorter">&#8722;</button><span class="val" id="hypeSecsOut"></span><button data-hs="5" aria-label="Longer">+</button></div></div>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><div class="seg two"><button class="go big" id="hypeGo">Start hype</button><button class="big" id="hypeScreen">Open big screen</button></div></div>
+      <div class="f"><span class="lab">Meter</span><span class="val left" id="hypeOut" style="min-height:2.6em">not running</span></div>
+    </section>
     <section class="grp"><h3>Band loop</h3>
       <div class="f"><span class="lab">Loop</span><div class="line"><span class="val left" id="bandOut">stopped</span><button id="bandGo" style="width:90px">Start</button></div></div>
     </section>
@@ -351,11 +357,13 @@ function onMsg(m){
     renderWho();renderConn();return}
   if(m.type==="stadium-hosts"){owners=m.owners||[];hosts=m.hosts||[];scope=m.scope||"server";claim=m.claim||null;renderHosts();return}
   if(m.type==="stadium-layout"){if(m.layout&&!pendingLayout){layout=m.layout;rebuild()}else if(!m.layout&&!layout)say("No seat layout yet. Pick one in the Layout tab.");return}
-  if(m.type==="stadium-cue"){cue=m.cue;renderShow();return}
+  if(m.type==="stadium-cue"){cue=m.cue;renderShow();renderHype();return}
   if(m.type==="stadium-plan"){if(m.plan){plan=Object.assign(plan,m.plan)}planDirty=true;renderPlan();return}
   if(m.type==="stadium-assigned"){onAssigned(m);return}
   if(m.type==="stadium-delay"){$("beaconOut").textContent=m.heard+(m.heard===1?" phone hears":" phones hear")+" the beacon, speaker delay "+Math.round(m.delay)+" ms";return}
   if(m.type==="stadium-beacon"){beaconOn=!!(m.beacon&&m.beacon.on);renderBeacon();return}
+  if(m.type==="stadium-hype"){hype=m;renderHype();return}
+  if(m.type==="stadium-hype-seats"){hypeSeats=m.seats||{};return}
   if(m.type==="stadium-count"){phones=m.phones|0;filled=new Set(m.seats||[]);renderCount();renderSeats();return}
 }
 function renderConn(){$("conn").textContent=!live?"not connected":host?"room "+room:"unlocking";$("conn").classList.toggle("ok",live&&host)}
@@ -685,6 +693,21 @@ function shareTick(){
   shareFrame={w:w,h:h,data:px};
 }
 
+/* ---------- hype meter ---------- */
+let hype=null,hypeSeats={},hypeSecs=20;
+function renderHype(){
+  $("hypeSecsOut").textContent=hypeSecs+" s";
+  const on=!!(cue&&cue.type==="hype");
+  $("hypeGo").textContent=on?"Stop hype":"Start hype";
+  if(!on){$("hypeOut").textContent="not running";return}
+  if(!hype||hype.at!==cue.at){$("hypeOut").textContent="starting";return}
+  $("hypeOut").textContent=hype.done?"Maxed out! The crowd filled it.":Math.round(hype.fill*100)+"% full, "+hype.active+" of "+hype.phones+" phones shaking";
+}
+document.querySelectorAll("[data-hs]").forEach(b=>b.addEventListener("click",()=>{hypeSecs=Math.min(120,Math.max(5,hypeSecs+ +b.dataset.hs));renderHype()}));
+$("hypeGo").addEventListener("click",()=>{if(cue&&cue.type==="hype"){show.type="hold";sendCue({type:"hold"});renderHype();return}hype=null;hypeSeats={};sendCue({type:"hype",secs:hypeSecs,at:now()+1500});renderHype();say("Hype meter running. Tell everyone to shake their phones.")});
+$("hypeScreen").addEventListener("click",()=>{if(!room){say("Pick a room first.");return}window.open("rainbow-run-stadium-screen-v1.html?stadium="+encodeURIComponent(room),"_blank")});
+renderHype();
+
 function bandPlaying(){return !!(loop&&loop.playing)}
 function renderBand(){$("bandGo").textContent=bandPlaying()?"Stop":"Start";$("bandOut").textContent=bandPlaying()?(loop.pending||loop).tempo+" bpm":"stopped"}
 $("bandGo").addEventListener("click",()=>{beat();send({type:"transport",action:bandPlaying()?"stop":"start"})});
@@ -935,7 +958,8 @@ function draw(){
       if(!shown.has(s.id)){g.globalAlpha=1;g.fillStyle="#2a3446";g.fillRect(x-dot*0.5,y-dot*0.5,dot,dot);continue}
       const c=mcol(s)||(pc&&ct>=0?STADIUM.color(pc,s,ct,bc):[90,140,220]);g.globalAlpha=1;g.fillStyle="rgb("+c[0]+","+c[1]+","+c[2]+")";g.fillRect(x-dot,y-dot,dot*2,dot*2);continue;
     }
-    const c=mcol(s)||(cue&&ct>=0?STADIUM.color(cue,s,ct,bc):[60,70,86]),on=filled.has(s.id);
+    const hl=cue&&cue.type==="hype"?hypeSeats[s.id]:undefined;
+    const c=hl!==undefined?(hl<5?[Math.round(30+hl/4.5*225),200,60]:[255,Math.round(200-(hl-4.5)/4.5*170),40]):mcol(s)||(cue&&ct>=0?STADIUM.color(cue,s,ct,bc):[60,70,86]),on=filled.has(s.id);
     g.fillStyle="rgb("+c[0]+","+c[1]+","+c[2]+")";g.globalAlpha=on||!phones?1:0.45;
     const r=on?dot:dot*0.7;g.fillRect(x-r,y-r,r*2,r*2);
   }

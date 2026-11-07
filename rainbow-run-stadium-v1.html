@@ -29,6 +29,9 @@ html,body{margin:0;height:100%;overflow:hidden;background:#d6eef9;color:var(--in
 #chip{position:fixed;left:calc(12px + env(safe-area-inset-left,0px));top:calc(12px + env(safe-area-inset-top,0px));
   background:var(--card);border:2px solid var(--blue);border-radius:12px;padding:6px 10px;font-weight:700;font-size:.85rem;transition:opacity .6s}
 #chip.gone{opacity:0}
+#hypeTxt{position:fixed;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center;font-weight:900;font-size:min(22vw,140px);letter-spacing:.04em;color:#fff;text-shadow:0 4px 0 #2f6fd6,0 0 30px #0008;pointer-events:none;display:none}
+#hypeBar{position:fixed;left:8%;right:8%;bottom:calc(10% + env(safe-area-inset-bottom,0px));height:22px;border:3px solid #fff;border-radius:14px;overflow:hidden;display:none;pointer-events:none;background:#0004}
+#hypeBar i{display:block;height:100%;width:0;background:#2f6fd6;transition:width .45s linear}
 .over{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;background:#d6eef9f2}
 .over[hidden]{display:none}
 .card{width:100%;max-width:380px;background:#fff;border:2px solid var(--blue);border-radius:18px;padding:18px}
@@ -49,6 +52,8 @@ button.ghost{background:#eef3f9;color:var(--ink);border:1px solid var(--line)}
 <video id="vid" playsinline preload="auto"></video>
 <div id="yt"></div>
 <div id="chip" class="gone"></div>
+<div id="hypeTxt">SHAKE</div>
+<div id="hypeBar"><i></i></div>
 
 <div class="over" id="entry" hidden>
   <div class="card">
@@ -146,6 +151,7 @@ function onMsg(m){
   if(m.type==="pong"){clock.pong(m);return}
   if(m.type==="loop"){loop=m.state||null;return}
   if(m.type==="stadium-layout"){layout=m.layout||null;me=layout?STADIUM.place(layout,seatId):null;sendPos();return}
+  if(m.type==="stadium-hype"){hypeState=m;return}
   if(m.type==="stadium-px"){const h=parseInt(String(m.c||"").slice(1),16);if(h>=0){shareCol=[h>>16&255,h>>8&255,h&255];shareAt=Date.now()}return}
   if(m.type==="stadium-cue"){cue=m.cue||null;return}
   if(m.type==="stadium-sound"){playFlyby(m.sound);return}
@@ -187,6 +193,28 @@ window.__stadiumLoop=()=>loop;
 /* BLUE PHONE: in a screen share stunt the server sends this seat its own color from the host's shared screen */
 let shareCol=null,shareAt=0;
 function sendPos(){if(me)send({type:"stadium-pos",x:me.x,y:me.y,u:me.u,v:me.v})}
+/* ---------- hype meter ----------
+   BLUE PHONE: during a hype cue the phone measures how hard it is being shaken, glows from green through yellow
+   to red as it shakes, and reports its level a few times a second. The crowd's shaking fills a shared meter. */
+let hypeLevel=0,hypeState=null,lastAcc=null,jerk=0,hypeSent=0;
+addEventListener("devicemotion",e=>{
+  const a=e.accelerationIncludingGravity;if(!a||a.x==null)return;
+  if(lastAcc){const d=Math.abs(a.x-lastAcc.x)+Math.abs(a.y-lastAcc.y)+Math.abs(a.z-lastAcc.z);jerk=jerk*0.9+d*0.1}
+  lastAcc={x:a.x,y:a.y,z:a.z};
+});
+function hypeTick(now){
+  const on=!!(cue&&cue.type==="hype"&&now>=cue.at);
+  $("hypeTxt").style.display=on&&!(hypeState&&hypeState.done)?"block":"none";
+  $("hypeBar").style.display=on?"block":"none";
+  if(!on){hypeLevel=0;return null}
+  const target=Math.min(1,Math.max(0,(jerk-1.2)/14));
+  hypeLevel+=(target-hypeLevel)*(target>hypeLevel?0.25:0.04);
+  if(Date.now()-hypeSent>250){hypeSent=Date.now();send({type:"stadium-hype",e:Math.round(hypeLevel*100)/100})}
+  if(hypeState&&hypeState.at===cue.at){$("hypeBar").firstElementChild.style.width=Math.round(hypeState.fill*100)+"%";
+    if(hypeState.done){const k=Math.floor((Date.now()-(hypeState.doneAt||0))/180)%2;return k?[255,40,40]:[255,255,255]}}
+  /* green, then yellow, then red */
+  const L=hypeLevel;return L<0.5?[Math.round(30+L*2*225),200,60]:[255,Math.round(200-(L-0.5)*2*170),Math.round(60-(L-0.5)*2*30)];
+}
 let mosaicCol=null;
 function mosaicColor(now){
   if(!me||!STADIUM_MOSAIC.wants(cue)){STADIUM_MOSAIC.make(null);return null}
@@ -205,10 +233,11 @@ function frame(){
   if(!joined)return;
   media(nowS());
   let col=[24,32,44];
+  const hc=hypeTick(nowS());
   if(me&&cue){const now=nowS(),t=(now-cue.at)/1000;
-    const mc=cue.type==="share"?(shareCol&&Date.now()-shareAt<3000?shareCol:[12,14,18]):STADIUM_MOSAIC.wants(cue)?mosaicColor(now):null;
+    const mc=cue.type==="hype"?(hc||[24,32,44]):cue.type==="share"?(shareCol&&Date.now()-shareAt<3000?shareCol:[12,14,18]):STADIUM_MOSAIC.wants(cue)?mosaicColor(now):null;
     col=mc||(t<0?[24,32,44]:STADIUM.color(cue,me,t,STADIUM.beatCount(loop,cue,now)))}
-  else{STADIUM_MOSAIC.make(null);if(!me&&layout)col=[90,96,110]}
+  else{STADIUM_MOSAIC.make(null);if(hc)col=hc;else if(!me&&layout)col=[90,96,110]}
   const css="rgb("+col[0]+","+col[1]+","+col[2]+")";
   if(css!==lastCol){lastCol=css;light.style.background=css}
 }
@@ -265,6 +294,8 @@ $("startGo").addEventListener("click",async()=>{
   const AC=window.AudioContext||window.webkitAudioContext;
   try{if(!actx)actx=new AC();await actx.resume()}catch(e){}
   try{wake=await navigator.wakeLock.request("screen")}catch(e){}
+  /* BLUE PHONE: some phones only hand over motion after a tap asks for it */
+  try{if(window.DeviceMotionEvent&&DeviceMotionEvent.requestPermission)await DeviceMotionEvent.requestPermission()}catch(e){}
   try{if(document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen()}catch(e){}
   $("start").hidden=true;joined=true;showChip("Seat "+seatId);listen();
 });
