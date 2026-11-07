@@ -150,10 +150,14 @@ canvas{z-index:1}
    and the seat is the phone's spot in the row. Every phone reads the same server clock and the same
    loop tempo, works out where the crow is on the long runway, and draws only its own slice of it. */
 const APP="rainbow-run",SCHEMA=1;
-const SYNC_URL=(window.STOMPBOX_LAB_CONFIG&&window.STOMPBOX_LAB_CONFIG.syncUrl)||"";
+/* BLUE PHONE: stadium mode runs this page hidden inside the seat page and the host screen with embed=1.
+   Then it joins no room, keeps nothing on the phone, draws the whole scene on one small screen, and takes its
+   clock and band loop from the page around it, so every phone in the stadium draws the same frame. */
+const EMBED=new URLSearchParams(location.search).get("embed")==="1";
+const SYNC_URL=EMBED?"":(window.STOMPBOX_LAB_CONFIG&&window.STOMPBOX_LAB_CONFIG.syncUrl)||"";
 const OWN_BPM=100;
 
-function keep(k,v){try{if(v===undefined)return localStorage.getItem(k);if(v===null)localStorage.removeItem(k);else localStorage.setItem(k,v)}catch(e){}return null}
+function keep(k,v){if(EMBED)return null;try{if(v===undefined)return localStorage.getItem(k);if(v===null)localStorage.removeItem(k);else localStorage.setItem(k,v)}catch(e){}return null}
 
 /* ---------- room and spot ---------- */
 let seat=0,count=1,loopState=null;
@@ -172,10 +176,10 @@ const LAYOUTS={row:null,quad:[2,2],nine:[3,3]};
 let layout=LAYOUTS.hasOwnProperty(keep(APP+"-layout"))?keep(APP+"-layout"):"row";
 /* Fit belongs to this phone only: a small zoom and an up or down nudge, so screens with different shapes line up. */
 let zoom=parseFloat(keep(APP+"-zoom"))||1,nudge=parseFloat(keep(APP+"-nudge"))||0;
-let scene=SCENES.indexOf(keep(APP+"-scene"))>=0?keep(APP+"-scene"):"crow";
+let scene=EMBED?(SCENES.indexOf(new URLSearchParams(location.search).get("scene"))>=0?new URLSearchParams(location.search).get("scene"):"crow"):SCENES.indexOf(keep(APP+"-scene"))>=0?keep(APP+"-scene"):"crow";
 let manualSpot=parseInt(keep(APP+"-spot"),10)||0;
 let manualRow=parseInt(keep(APP+"-row"),10)||0;
-function live(){return sync.status==="live"}
+function live(){return EMBED?!!loopState:sync.status==="live"}
 /* Row size comes from the server while live. A row size set by hand wins, so phones still line up when the room drops. */
 function total(){return Math.max(1,manualRow||count)}
 /* Columns and rows of the whole wall of phones. */
@@ -216,7 +220,7 @@ sync.on("loop",m=>{loopState=m.state||null;renderPace()});
 sync.on("auth",m=>{if(!m.ok){say(m.reason||"sign in again");auth.refresh()}else say("")});
 
 /* ---------- shared timing ---------- */
-function nowMs(){return clock.synced?clock.now():Date.now()}
+function nowMs(){if(EMBED){try{if(parent.__stadiumNow){loopState=parent.__stadiumLoop?parent.__stadiumLoop():null;return parent.__stadiumNow()}}catch(e){}}return clock.synced?clock.now():Date.now()}
 function bandOn(){const s=loopState;return !!(live()&&s&&s.playing&&!s.idle&&typeof s.tempo==="number"&&typeof s.epoch==="number")}
 /* Beat count at server time t. Follows the band loop while it plays, otherwise a fixed pace from the clock. */
 function beatAt(t){
@@ -367,7 +371,7 @@ function drawCrow(left,headX,b,u){
 }
 
 function drawSpotNumber(){
-  if(panel.hidden)return;
+  if(panel.hidden||EMBED)return;
   const s=spot(),fs=Math.round(Math.min(W,H)*0.5);
   g.font="800 "+fs+"px ui-rounded,system-ui,sans-serif";g.textAlign="right";g.textBaseline="bottom";
   g.fillStyle="rgba(31,36,51,0.12)";g.fillText(String(s),W-H*0.05,H*0.98);
@@ -611,7 +615,7 @@ function wallSync(t){
     document.body.insertBefore(wallEl,cv);wallKey=key;
   }
   const ox=(W-SW*sc)/2-cx*SW*sc,oy=(H-SH*sc)/2-cy*SH*sc+nudge*H;
-  wallEl.style.transform="translate("+ox+"px,"+oy+"px) scale("+sc+")";
+  wallEl.style.transform="translate("+ox+"px,"+oy+"px) scale("+sc+")";wallEl._tx={ox:ox,oy:oy,sc:sc,w:cols*SW,h:rows*SH};
   /* the band beat for scenes that move to music, as a beat count at a time since the scene started */
   try{const cw=wallEl.contentWindow,ep=cyc*PERIOD;if(cw&&!cw.__band){cw.__band=function(ms){return {active:bandOn(),beat:beatAt(ep+ms)}};cw.__room=function(){return {state:loopState,epoch:ep}}}}catch(e){}
   try{const cw=wallEl.contentWindow;if(cw&&cw.__tick){const st=cw.__tick(t-cyc*PERIOD);if(st==="live"&&!wallEl._shown){wallEl._shown=true;wallEl.style.opacity=1}}}catch(e){}
@@ -643,6 +647,22 @@ function frame(){
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+/* BLUE PHONE: the stadium reads the whole picture this page shows, shrunk to w by h, as red green blue alpha. */
+let grabC=null;
+window.__stadiumGrab=function(w,h){
+  if(!grabC)grabC=document.createElement("canvas");
+  if(grabC.width!==w||grabC.height!==h){grabC.width=w;grabC.height=h}
+  const x=grabC.getContext("2d",{willReadFrequently:true}),k=w/Math.max(1,W);
+  x.setTransform(1,0,0,1,0,0);x.fillStyle="#eef3f5";x.fillRect(0,0,w,h);
+  try{
+    if(wallEl&&wallEl._tx){const wc=wallEl.contentDocument&&wallEl.contentDocument.getElementById("cv"),T=wallEl._tx;
+      if(wc&&wc.width)x.drawImage(wc,0,0,wc.width,wc.height,T.ox*k,T.oy*k,T.w*T.sc*k,T.h*T.sc*k)}
+    else x.drawImage(cv,0,0,cv.width,cv.height,0,0,w,h);
+  }catch(e){}
+  return x.getImageData(0,0,w,h).data;
+};
+if(EMBED){document.getElementById("panel").hidden=true;document.getElementById("menu").style.display="none"}
 
 /* ---------- original chiptune, scheduled on the shared beat ---------- */
 const N=n=>440*Math.pow(2,(n-69)/12);

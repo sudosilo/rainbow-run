@@ -14,7 +14,9 @@
      the show with any number of guests seated, and hands out the next seat at the door with a code to scan.
      The seat grid editor sets each row's seat count and switches single seats off.
      BLUE PHONE: Every screen picture sends one picture to every seat phone at once, and Video plays one video link
-     on every seat phone in step with the server clock. -->
+     on every seat phone in step with the server clock.
+     BLUE PHONE: Demo runs any Rainbow Run animation across the whole crowd, one phone per pixel, and Video stunt
+     does the same with a video. The preview runs the same frames and colors every seat with what it will show. -->
 <style>
 :root{--ink:#1f2433;--soft:#5b6478;--line:#c9d3e0;--blue:#2f6fd6;--chip:#eef3f9;--card:#ffffff}
 *{box-sizing:border-box}
@@ -88,6 +90,7 @@ input[type=color]{width:44px;height:38px;border:1px solid var(--line);border-rad
     <div class="row"><span class="lab">Scene</span>
       <button data-scene="hold">Hold</button><button data-scene="rainbow">Rainbow</button><button data-scene="wave">Wave</button>
       <button data-scene="ripple">Ripple</button><button data-scene="beat">Beat</button><button data-scene="check">Line up</button><button data-scene="dark">Dark</button></div>
+    <div class="row"><span class="lab">Demo</span><select id="demoSel" aria-label="Rainbow Run animation to run across the crowd" style="flex:1;min-width:0;font:inherit;font-size:.9rem;padding:9px;border:1px solid var(--line);border-radius:10px;background:#fff"></select></div>
     <div class="row"><span class="lab">Colors</span><input type="color" id="colA" value="#2f6fd6" aria-label="First color"><input type="color" id="colB" value="#ffffff" aria-label="Second color"></div>
     <div class="row"><span class="lab">Speed</span><button data-p="speed" data-d="-0.25">&#8722;</button><span class="val" id="speedOut"></span><button data-p="speed" data-d="0.25">+</button></div>
     <div class="row"><span class="lab">Detail</span><button data-p="detail" data-d="-1">&#8722;</button><span class="val" id="detailOut"></span><button data-p="detail" data-d="1">+</button></div>
@@ -97,7 +100,7 @@ input[type=color]{width:44px;height:38px;border:1px solid var(--line);border-rad
     <div class="row"><span class="lab">Picture</span><button id="picPick">Card stunt picture</button><input type="file" id="picFile" accept="image/*" hidden><button id="screenPick">Every screen picture</button><input type="file" id="screenFile" accept="image/*" hidden></div>
     <div class="row"><span class="lab">Screen fit</span><button id="fitWhole" class="on">Whole picture</button><button id="fitFill">Fill screen</button></div>
     <div class="row"><span class="lab">Video link</span><input type="text" id="vidUrl" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="https link to an mp4 file" aria-label="Video link"></div>
-    <div class="row"><span class="lab">Video</span><button id="vidGo">Play video</button><button id="vidLoop">Loop off</button><button id="vidSound">Sound on</button></div>
+    <div class="row"><span class="lab">Video</span><button id="vidGo">Play video</button><button id="vidLoop">Loop off</button><button id="vidSound">Sound on</button><button id="vidStunt">Whole video</button></div>
     <div class="row"><span class="lab">Band loop</span><button id="bandGo">Start</button><span class="val" id="bandOut">stopped</span></div>
   </div>
 
@@ -183,6 +186,7 @@ input[type=color]{width:44px;height:38px;border:1px solid var(--line);border-rad
 <script src="stompbox-lab-v2-clock.js"></script>
 <script src="rainbow-run-stadium-v1-core.js"></script>
 <script src="rainbow-run-stadium-v1-qr.js"></script>
+<script src="rainbow-run-stadium-v1-mosaic.js"></script>
 <script>
 (function(){
 "use strict";
@@ -364,13 +368,21 @@ $("screenFile").addEventListener("change",()=>{
   im.onerror=()=>say("That file did not open as a picture.");
   im.src=URL.createObjectURL(f);
 });
-let vidLoop=false,vidMuted=false;
+let vidLoop=false,vidMuted=false,vidStunt=false;
+$("vidStunt").addEventListener("click",()=>{vidStunt=!vidStunt;$("vidStunt").textContent=vidStunt?"Video stunt":"Whole video";$("vidStunt").classList.toggle("on",vidStunt)});
+/* Demo: every Rainbow Run animation, in the groups its own menu shows. */
+(function(){
+  const sel=$("demoSel"),o0=document.createElement("option");o0.value="";o0.textContent="Pick an animation";sel.appendChild(o0);
+  STADIUM_MOSAIC.GROUPS.forEach(gp=>{const og=document.createElement("optgroup");og.label=gp[0];gp[1].forEach(it=>{const o=document.createElement("option");o.value=it[0];o.textContent=it[1];og.appendChild(o)});sel.appendChild(og)});
+  sel.addEventListener("change",()=>{if(!sel.value)return;show.type="demo";sendCue({type:"demo",scene:sel.value});say("Demo "+sel.options[sel.selectedIndex].text+" across the crowd.")});
+})();
+window.__stadiumNow=()=>now();window.__stadiumLoop=()=>loop;
 $("vidLoop").addEventListener("click",()=>{vidLoop=!vidLoop;renderFit()});
 $("vidSound").addEventListener("click",()=>{vidMuted=!vidMuted;renderFit()});
 $("vidGo").addEventListener("click",()=>{
   let u=$("vidUrl").value.trim();if(!u){$("vidUrl").focus();return}
   if(!/^https?:\/\//i.test(u))u="https://"+u;u=u.replace(/^http:/i,"https:");
-  sendCue({type:"video",url:u,fit:screenFit,loop:vidLoop,muted:vidMuted,at:now()+2500});say("Video starts on every screen in a moment.");
+  sendCue({type:"video",url:u,fit:screenFit,loop:vidLoop,muted:vidMuted,stunt:vidStunt,at:now()+2500});say(vidStunt?"Video stunt starts across the crowd in a moment.":"Video starts on every screen in a moment.");
 });
 renderFit();
 
@@ -567,6 +579,8 @@ $("gridOpen").addEventListener("click",()=>{if(!layout){say("Pick a layout first
 $("gridClose").addEventListener("click",()=>{$("gridEd").hidden=true});
 
 /* ---------- preview ---------- */
+let taintSaid=false,lastFrame=null;
+function boxOf(q){return {x0:q.x0,y0:q.y0,x1:q.x1,y1:q.y1,w:Math.max(1,q.x1-q.x0),h:Math.max(1,q.y1-q.y0)}}
 const pv=$("pv"),g=pv.getContext("2d");let PW=0,PH=0,view=null;
 function size(){const d=Math.min(2,devicePixelRatio||1),r=pv.getBoundingClientRect();PW=r.width;PH=r.height;pv.width=Math.round(PW*d);pv.height=Math.round(PH*d);g.setTransform(d,0,0,d,0,0)}
 addEventListener("resize",size);
@@ -583,18 +597,27 @@ function draw(){
   const shown=planView?shownSeats():null;
   let pc=cue;
   if(cue&&planView&&plan.fit==="guests"){const bx=guestBox(shown);pc=Object.assign({},cue,{box:bx||undefined})}
+  /* A demo or a video stunt: one shared frame, and each seat shows the color under it. */
+  let mframe=null,mbox=null;
+  if(STADIUM_MOSAIC.wants(pc)){
+    mbox=pc.box?boxOf(pc.box):b;
+    const src=STADIUM_MOSAIC.make(pc,mbox.w/mbox.h,()=>now());
+    if(src&&src.tainted&&!taintSaid){taintSaid=true;say("That video's site will not let its pixels be read, so it plays whole on each screen instead.")}
+    if(src&&ct>=0)mframe=src.grab()||lastFrame;lastFrame=mframe;
+  } else STADIUM_MOSAIC.make(null);
+  const mcol=s=>mframe?STADIUM_MOSAIC.sample(mframe,(s.x-mbox.x0)/mbox.w,(s.y-mbox.y0)/mbox.h):null;
   for(let i=0;i<all.length;i++){
     const s=all[i],x=ox+s.x*sc,y=oy+s.y*sc;
     if(shown){
       if(!shown.has(s.id)){g.globalAlpha=1;g.fillStyle="#2a3446";g.fillRect(x-dot*0.5,y-dot*0.5,dot,dot);continue}
-      const c=pc&&ct>=0?STADIUM.color(pc,s,ct,bc):[90,140,220];g.globalAlpha=1;g.fillStyle="rgb("+c[0]+","+c[1]+","+c[2]+")";g.fillRect(x-dot,y-dot,dot*2,dot*2);continue;
+      const c=mcol(s)||(pc&&ct>=0?STADIUM.color(pc,s,ct,bc):[90,140,220]);g.globalAlpha=1;g.fillStyle="rgb("+c[0]+","+c[1]+","+c[2]+")";g.fillRect(x-dot,y-dot,dot*2,dot*2);continue;
     }
-    const c=cue&&ct>=0?STADIUM.color(cue,s,ct,bc):[60,70,86],on=filled.has(s.id);
+    const c=mcol(s)||(cue&&ct>=0?STADIUM.color(cue,s,ct,bc):[60,70,86]),on=filled.has(s.id);
     g.fillStyle="rgb("+c[0]+","+c[1]+","+c[2]+")";g.globalAlpha=on||!phones?1:0.45;
     const r=on?dot:dot*0.7;g.fillRect(x-r,y-r,r*2,r*2);
   }
   g.globalAlpha=1;
-  if(cue&&(cue.type==="image"||cue.type==="video")&&ct>=0)drawMedia(ct);
+  if(cue&&(cue.type==="image"||(cue.type==="video"&&!(cue.stunt&&mframe)))&&ct>=0)drawMedia(ct);
   if(selId){g.strokeStyle="#5aa2ff";g.lineWidth=1.5;const sb=STADIUM.bounds(all.filter(s=>s.sec===selId));g.strokeRect(ox+sb.x0*sc-dot-3,oy+sb.y0*sc-dot-3,sb.w*sc+2*dot+6,sb.h*sc+2*dot+6)}
   g.fillStyle="#ffffff";g.font="700 11px sans-serif";g.textAlign="center";g.fillText("STAGE",ox+b.cx*sc,Math.max(11,oy+b.y0*sc-dot-6));
   if(flight){const e=(t-flight.at)/1000;if(e>flight.dur+2)flight=null;else if(e>=0&&e<=flight.dur){const p=STADIUM.sourceAt(flight,b,e);
