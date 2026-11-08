@@ -40,6 +40,14 @@ p{margin:0 0 12px;color:var(--soft);line-height:1.4}
 input{width:100%;font:inherit;font-size:1rem;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin:0 0 10px;-webkit-user-select:text;user-select:text}
 button{font:inherit;font-weight:700;font-size:1rem;border-radius:12px;border:0;padding:14px;width:100%;margin:0 0 8px;background:var(--blue);color:#fff;cursor:pointer}
 button.ghost{background:#eef3f9;color:var(--ink);border:1px solid var(--line)}
+/* BLUE PHONE: the seat code scanner fills the screen with the back camera and a blue frame to aim with */
+#scan{position:fixed;inset:0;background:#000;z-index:5}
+#scan[hidden]{display:none}
+#scanVid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+#scanFrame{position:absolute;left:50%;top:44%;width:min(70vw,60vh);aspect-ratio:1;transform:translate(-50%,-50%);border:4px solid #2f6fd6;border-radius:22px;box-shadow:0 0 0 100vmax #0007}
+#scanTxt{position:absolute;left:16px;right:16px;top:max(18px,env(safe-area-inset-top,0px));text-align:center;color:#fff;font-weight:800;font-size:1.1rem;text-shadow:0 2px 6px #000}
+#scanCancel{position:absolute;left:16px;right:16px;bottom:max(20px,env(safe-area-inset-bottom,0px));width:auto;background:#fff;color:var(--ink)}
+.or{text-align:center;font-size:.85rem;margin:2px 0 10px}
 .big{font-size:2rem;font-weight:800;color:var(--ink);margin:0 0 6px}
 </style>
 <link rel="manifest" href="rainbow-run-v1.webmanifest">
@@ -55,13 +63,22 @@ button.ghost{background:#eef3f9;color:var(--ink);border:1px solid var(--line)}
 <div id="hypeTxt">SHAKE</div>
 <div id="hypeBar"><i></i></div>
 
+<div id="scan" hidden>
+  <video id="scanVid" playsinline muted></video>
+  <div id="scanFrame"></div>
+  <div id="scanTxt">Point the camera at the seat code</div>
+  <button id="scanCancel">Cancel</button>
+</div>
+
 <div class="over" id="entry" hidden>
   <div class="card">
     <h1>Rainbow Run Stadium</h1>
-    <p>Scan the seat code on your seat with the camera, or type the room and seat printed on it.</p>
+    <p>Scan the code on your seat, your ticket or the door kiosk.</p>
+    <button id="scanGo">Scan the seat code</button>
+    <p class="or">or type the room and seat printed on it</p>
     <input id="roomIn" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="room code" aria-label="Room code">
     <input id="seatIn" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="seat, for example A-3-12" aria-label="Seat">
-    <button id="entryGo">Take my seat</button>
+    <button id="entryGo" class="ghost">Take my seat</button>
     <p id="entryMsg" style="color:#2f6fd6;font-weight:700;margin:4px 0 0"></p>
   </div>
 </div>
@@ -361,6 +378,44 @@ async function preloadState(){
   }catch(e){$("preload").textContent=""}
 }
 preloadState();
+/* ---------- seat code scanner ----------
+   BLUE PHONE: uses the browser's own QR reader when it has one, and the vendored jsQR decoder when it does not.
+   A Rainbow Run code opens its seat, floor spot or seed straight away. */
+let scanStream=null,scanTimer=null,scanBusy=false,detector=null;
+function scanStop(){clearInterval(scanTimer);scanTimer=null;if(scanStream)scanStream.getTracks().forEach(t=>t.stop());scanStream=null;$("scanVid").srcObject=null;$("scan").hidden=true}
+function loadJsQR(){return window.jsQR?Promise.resolve():new Promise((res,rej)=>{const s=document.createElement("script");s.src="rainbow-run-stadium-v1-jsqr.js";s.onload=res;s.onerror=rej;document.head.appendChild(s)})}
+function scanFound(text){
+  let u=null;try{u=new URL(String(text).trim(),location.href)}catch(e){}
+  const qp=u&&u.searchParams;
+  if(!u||u.origin!==location.origin||!(qp.get("stadium"))){$("scanTxt").textContent="That is not a Rainbow Run seat code. Try again.";return false}
+  scanStop();
+  /* the code's own address carries the room, seat, ticket, floor or seed */
+  const go=new URL("rainbow-run-stadium-v1.html",location.href);qp.forEach((v,k)=>go.searchParams.set(k,v));
+  location.href=go.toString();return true;
+}
+const scanCv=document.createElement("canvas"),scanG=scanCv.getContext("2d",{willReadFrequently:true});
+async function scanTick(){
+  const v=$("scanVid");if(scanBusy||!v.videoWidth)return;scanBusy=true;
+  try{
+    if(detector){const r=await detector.detect(v);if(r&&r.length)scanFound(r[0].rawValue)}
+    else if(window.jsQR){const w=Math.min(640,v.videoWidth),h=Math.round(v.videoHeight*w/v.videoWidth);scanCv.width=w;scanCv.height=h;scanG.drawImage(v,0,0,w,h);
+      const r=jsQR(scanG.getImageData(0,0,w,h).data,w,h,{inversionAttempts:"dontInvert"});if(r&&r.data)scanFound(r.data)}
+  }catch(e){}
+  scanBusy=false;
+}
+$("scanGo").addEventListener("click",async()=>{
+  $("entryMsg").textContent="";
+  try{
+    if(!detector&&"BarcodeDetector" in window){try{const f=await BarcodeDetector.getSupportedFormats();if(f.indexOf("qr_code")>=0)detector=new BarcodeDetector({formats:["qr_code"]})}catch(e){}}
+    if(!detector)await loadJsQR();
+    scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720}},audio:false});
+  }catch(e){scanStop();$("entryMsg").textContent="The camera did not open. Allow it for this site, or type the room and seat.";return}
+  const v=$("scanVid");v.srcObject=scanStream;$("scanTxt").textContent="Point the camera at the seat code";$("scan").hidden=false;
+  try{await v.play()}catch(e){}
+  scanTimer=setInterval(scanTick,180);
+});
+$("scanCancel").addEventListener("click",scanStop);
+
 if(room&&(seatId||floor))begin();else $("entry").hidden=false;
 frame();
 window.RRStadium={get corr(){return corr},get me(){return me},get cue(){return cue},get layout(){return layout},clock:clock,get live(){return live}};
