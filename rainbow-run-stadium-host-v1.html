@@ -235,6 +235,13 @@ input[type=range]{width:100%;accent-color:var(--blue)}
       <div class="f" style="grid-template-columns:minmax(0,1fr)"><div class="seg two"><button id="undoGuest">Undo last</button><button id="clearGuests">Clear seating</button></div></div>
       <div class="f"><span class="lab">Seated</span><span class="val left" id="seatedOut"></span></div>
     </section>
+    <section class="grp"><h3>Floor virus</h3>
+      <p>Phones find where they stand by sound. Each plays a short tick and a soft owo in its own turn, and listens for its neighbors. Seeds placed on the map start strains that spread to phones close by, and infected phones join their strain's groove.</p>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><div class="seg two"><button class="go big" id="vxGo">Start virus</button><button class="big" id="vxFloor">Floor join code</button></div></div>
+      <div class="f" style="grid-template-columns:minmax(0,1fr)"><button id="vxAdd">Add a seed, then tap its spot on the map</button></div>
+      <div id="vxSeedList"></div>
+      <div class="f"><span class="lab">Game</span><span class="val left" id="vxOut" style="min-height:2.6em">not running</span></div>
+    </section>
     <section class="grp"><h3>Entry kiosks</h3>
       <p>Each kiosk is a link you open on a phone, tablet or screen at a door. It shows a code for the next guest; the guest scans it and gets a seat. Every door follows the same fill order, each code works once, and every seat records which door gave it.</p>
       <div class="line" style="margin:0 0 8px"><input type="text" id="kioskName" maxlength="32" placeholder="door name, like North gate" aria-label="Kiosk name"><button class="go" id="kioskAdd">Add kiosk</button></div>
@@ -292,6 +299,15 @@ input[type=range]{width:100%;accent-color:var(--blue)}
   </div>
 </div>
 
+<div class="over" id="qrOver" hidden>
+  <div class="card" style="text-align:center">
+    <h2 id="qrTitle"></h2>
+    <p id="qrNote"></p>
+    <div id="qrImg" style="width:100%;max-width:280px;margin:0 auto 12px;aspect-ratio:1"></div>
+    <button id="qrDone" class="go">Done</button>
+  </div>
+</div>
+
 <div class="over" id="door" hidden>
   <div class="card" style="text-align:center">
     <h2>Next guest</h2>
@@ -323,6 +339,8 @@ input[type=range]{width:100%;accent-color:var(--blue)}
 <script src="rainbow-run-stadium-v1-mosaic.js"></script>
 <script src="rainbow-run-stadium-v1-beacon.js"></script>
 <script src="rainbow-run-stadium-v1-youtube.js"></script>
+<script src="rainbow-run-stadium-v1-virus-core.js"></script>
+<script src="rainbow-run-stadium-v1-virus.js"></script>
 <script>
 (function(){
 "use strict";
@@ -365,13 +383,15 @@ function onMsg(m){
     renderWho();renderConn();return}
   if(m.type==="stadium-hosts"){owners=m.owners||[];hosts=m.hosts||[];scope=m.scope||"server";claim=m.claim||null;renderHosts();return}
   if(m.type==="stadium-layout"){if(m.layout&&!pendingLayout){layout=m.layout;rebuild()}else if(!m.layout&&!layout)say("No seat layout yet. Pick one in the Layout tab.");return}
-  if(m.type==="stadium-cue"){cue=m.cue;renderShow();renderHype();return}
+  if(m.type==="stadium-cue"){cue=m.cue;renderShow();renderHype();renderVx();return}
   if(m.type==="stadium-plan"){if(m.plan){plan=Object.assign(plan,m.plan)}planDirty=true;renderPlan();return}
   if(m.type==="stadium-assigned"){onAssigned(m);return}
   if(m.type==="stadium-delay"){$("beaconOut").textContent=m.heard+(m.heard===1?" phone hears":" phones hear")+" the beacon, speaker delay "+Math.round(m.delay)+" ms";return}
   if(m.type==="stadium-beacon"){beaconOn=!!(m.beacon&&m.beacon.on);renderBeacon();return}
   if(m.type==="stadium-hype"){hype=m;renderHype();return}
   if(m.type==="stadium-entry"){entry=m;renderEntry();return}
+  if(m.type==="stadium-vx-seeds"){vxSeeds=m.seeds||[];renderVx();return}
+  if(m.type==="stadium-vx-map"){vxMap=m;renderVx();return}
   if(m.type==="stadium-entry-list"){downloadEntry(m.rows||[]);return}
   if(m.type==="stadium-hype-seats"){hypeSeats=m.seats||{};return}
   if(m.type==="stadium-count"){phones=m.phones|0;filled=new Set(m.seats||[]);renderCount();renderSeats();return}
@@ -800,6 +820,37 @@ function renderSeats(){
   });
 }
 function seatUrl(id,t){return location.origin+"/?stadium="+encodeURIComponent(room)+"&seat="+encodeURIComponent(id)+(t?"&t="+encodeURIComponent(t):"")}
+/* ---------- floor virus ---------- */
+let vxSeeds=[],vxMap=null,vxPlacing=false;
+function qrShow(title,note,url){const c=qrcode(0,"M");c.addData(url);c.make();$("qrImg").innerHTML=c.createSvgTag({cellSize:4,margin:2,scalable:true});$("qrTitle").textContent=title;$("qrNote").textContent=note;$("qrOver").hidden=false}
+$("qrDone").addEventListener("click",()=>{$("qrOver").hidden=true});
+function floorUrl(){return location.origin+"/?stadium="+encodeURIComponent(room)+"&floor=1"}
+function seedUrl(v){return location.origin+"/?stadium="+encodeURIComponent(room)+"&vseed="+encodeURIComponent(v.id)+"&vt="+encodeURIComponent(v.token)}
+function renderVx(){
+  const on=!!(cue&&cue.type==="virus");$("vxGo").textContent=on?"Stop virus":"Start virus";
+  const box=$("vxSeedList");box.textContent="";
+  vxSeeds.forEach((v,i)=>{
+    const r=document.createElement("div");r.style.cssText="padding:8px 0;border-top:1px solid #eef2f7";
+    const l=document.createElement("div");const c=STADIUM_VIRUS.COLORS[i%STADIUM_VIRUS.COLORS.length];
+    l.style.cssText="font-weight:700;font-size:.88rem;margin:0 0 6px;border-left:8px solid rgb("+c.join(",")+");padding-left:8px";l.textContent=v.name+" at "+v.x+", "+v.y+" m";r.appendChild(l);
+    const bs=document.createElement("div");bs.className="seg two";
+    const o=document.createElement("button");o.textContent="Seed code";o.addEventListener("click",()=>qrShow(v.name,"Scan this with the phone standing at the seed's spot.",seedUrl(v)));
+    const x=document.createElement("button");x.textContent="Remove";x.addEventListener("click",()=>send({type:"stadium-vx-seeds",action:"remove",id:v.id}));
+    bs.append(o,x);r.appendChild(bs);box.appendChild(r);
+  });
+  if(!on){$("vxOut").textContent=vxSeeds.length<3?"Place at least three seeds, spread out and not in a line, so the map can find everyone.":"not running";return}
+  if(!vxMap){$("vxOut").textContent="starting, phones are joining";return}
+  let inf=0,placed=0;vxMap.phones.forEach(p=>{if(p[2]>=0)inf++;if(p[0]!==null)placed++});
+  $("vxOut").textContent=vxMap.phones.length+" phones playing, "+inf+" infected, "+placed+" on the map, "+vxMap.pairs+" measured pairs, a hop is about "+vxMap.hopLen+" m";
+}
+$("vxGo").addEventListener("click",()=>{
+  if(cue&&cue.type==="virus"){show.type="hold";sendCue({type:"hold"});vxMap=null;renderVx();return}
+  if(!layout){say("Pick a layout first. The Field preset works as a dance floor.");return}
+  vxMap=null;sendCue({type:"virus",at:now()+2000});renderVx();say("Virus running. Phones on the floor start calling.");
+});
+$("vxFloor").addEventListener("click",()=>{if(!room){say("Pick a room first.");return}qrShow("Join the floor","Guests scan this to join the floor game without a seat.",floorUrl())});
+$("vxAdd").addEventListener("click",()=>{if(!layout){say("Pick a layout first.");return}vxPlacing=true;say("Tap the seed's spot on the map above.")});
+
 /* ---------- entry kiosks ---------- */
 let entry={kiosks:[],ticketsOnly:false,total:0};
 function kioskUrl(k){return location.origin+"/rainbow-run-stadium-kiosk-v1.html?stadium="+encodeURIComponent(room)+"&kiosk="+encodeURIComponent(k.id)+"&key="+encodeURIComponent(k.token)}
@@ -1011,6 +1062,12 @@ function draw(){
   if(cue&&(cue.type==="image"||(cue.type==="video"&&!(cue.stunt&&mframe))||(cue.type==="share"&&shareLocal))&&ct>=0)drawMedia(ct);
   if(selId){g.strokeStyle="#5aa2ff";g.lineWidth=1.5;const sb=STADIUM.bounds(all.filter(s=>s.sec===selId));g.strokeRect(ox+sb.x0*sc-dot-3,oy+sb.y0*sc-dot-3,sb.w*sc+2*dot+6,sb.h*sc+2*dot+6)}
   g.fillStyle="#ffffff";g.font="700 11px sans-serif";g.textAlign="center";g.fillText("STAGE",ox+b.cx*sc,Math.max(11,oy+b.y0*sc-dot-6));
+  /* the floor game: every phone the map has placed, in its strain's color, and the seeds as rings */
+  if(cue&&cue.type==="virus"){
+    if(vxMap)vxMap.phones.forEach(p=>{if(p[0]===null)return;const c=p[2]>=0?STADIUM_VIRUS.COLORS[p[2]%STADIUM_VIRUS.COLORS.length]:[150,170,200];
+      g.fillStyle="rgb("+c.join(",")+")";g.beginPath();g.arc(ox+p[0]*sc,oy+p[1]*sc,3.5,0,6.283);g.fill()});
+  }
+  vxSeeds.forEach((v,i)=>{const c=STADIUM_VIRUS.COLORS[i%STADIUM_VIRUS.COLORS.length];g.strokeStyle="rgb("+c.join(",")+")";g.lineWidth=2.5;g.beginPath();g.arc(ox+v.x*sc,oy+v.y*sc,7,0,6.283);g.stroke()});
   if(flight){const e=(t-flight.at)/1000;if(e>flight.dur+2)flight=null;else if(e>=0&&e<=flight.dur){const p=STADIUM.sourceAt(flight,b,e);
     g.fillStyle="#ffd23a";g.beginPath();g.arc(ox+p[0]*sc,oy+p[1]*sc,6,0,6.283);g.fill()}}
 }
@@ -1028,6 +1085,7 @@ function drawMedia(ct){
 }
 pv.addEventListener("click",e=>{
   if(!view||!layout)return;const r=pv.getBoundingClientRect(),x=(e.clientX-r.left-view.ox)/view.sc,y=(e.clientY-r.top-view.oy)/view.sc;
+  if(vxPlacing){vxPlacing=false;send({type:"stadium-vx-seeds",action:"add",x:Math.round(x*10)/10,y:Math.round(y*10)/10});say("Seed placed. Open its code on the phone that stands there.");return}
   let best=null,d=Infinity;all.forEach(s=>{const k=Math.hypot(s.x-x,s.y-y);if(k<d){d=k;best=s}});
   if(best){sel=best.si;renderLayout();say("Section "+best.sec+", nearest seat "+best.id)}
 });

@@ -277,6 +277,6 @@ function flyby(snd, s, step) {
   return { freq: freq, gain: gain, step: step, total: total };
 }
 
-window.STADIUM = { seats: seats, count: count, bounds: bounds, place: place, placeAll: placeAll, PRESETS: PRESETS, order: order, shapeMask: shapeMask, SHAPES: SHAPES, rowSeats: rowSeats,
+window.STADIUM = { enrich: enrich, seats: seats, count: count, bounds: bounds, place: place, placeAll: placeAll, PRESETS: PRESETS, order: order, shapeMask: shapeMask, SHAPES: SHAPES, rowSeats: rowSeats,
   color: color, hex: hex, beatCount: beatCount, flyby: flyby, sourceAt: sourceAt, MAX: 2500 };
 })();
